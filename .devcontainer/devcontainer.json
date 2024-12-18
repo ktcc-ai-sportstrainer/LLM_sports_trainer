@@ -1,0 +1,41 @@
+{
+    "name": "ubuntu-python-mamba",
+    "build": {
+        "dockerfile": "./Dockerfile"
+    },
+    "runArgs": [
+        "--gpus", "all"
+    ],
+    "init": true,
+    "customizations": {
+        "vscode": {
+            "settings": {
+                "python.defaultInterpreterPath": "/opt/conda/bin/python",
+                "python.condaPath": "/opt/conda/bin/mamba",
+                "[python]": {
+                    "editor.formatOnSave": true,
+                    "editor.codeActionsOnSave": {
+                        "source.fixAll": "explicit",
+                        "source.organizeImports": "explicit"
+                    },
+                    "editor.defaultFormatter": "charliermarsh.ruff"
+                }
+            },
+            "extensions": [
+                "ms-python.python",
+                "charliermarsh.ruff",
+                "KevinRose.vsc-python-indent",
+                "njpwerner.autodocstring",
+                "VisualStudioExptTeam.vscodeintellicode"
+            ]
+        }
+    },
+    "features": {
+        // https://github.com/rocker-org/devcontainer-features/tree/main/src/miniforge
+        "ghcr.io/rocker-org/devcontainer-features/miniforge:latest": {
+            "version": "latest",
+            "variant": "Mambaforge"
+        }
+    },
+    "postCreateCommand": "/bin/bash ${containerWorkspaceFolder}/.devcontainer/setup.sh"
+}
