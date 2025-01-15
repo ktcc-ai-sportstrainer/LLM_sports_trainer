@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 llm = ChatOpenAI(
     model="gpt-4o", 
     temperature="0.7",
+
 )
 
 
@@ -440,8 +441,9 @@ summary = chain.invoke({"history": memory.buffer})
 
 print(summary)
 agent = RoleBasedCooperation(llm=llm)
-graph = agent._create_graph()
 
+# graphの生成 (デバッグ用に残す場合はコメントアウトを外す)
+graph = agent._create_graph()
 for s in graph.stream(AgentState(query=summary)):
     if "__end__" not in s:
         print(s)
