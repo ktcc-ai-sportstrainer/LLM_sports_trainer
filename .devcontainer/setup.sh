@@ -1,14 +1,10 @@
 #!/bin/bash
 
-# mambaを初期化
+# mamba 初期化（.bashrc 等に追記）
 mamba init -q
 
-# Pythonを最新にアップデート
+# Pythonバージョンを最新にアップデート（必要に応じて）
 mamba update python -qy
-
-# パッケージのインストール
-# コメントアウトを外し、<install packages> の部分を置き換えてください
-# mamba install -qy <install packages>  # パッケージのインストール
 
 # 全パッケージのアップデート
 mamba update -qy --all

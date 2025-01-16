@@ -1,17 +1,25 @@
 {
+    // Dev Container で表示される名前
     "name": "ubuntu-python-mamba",
+
+    // Dockerfile とビルドコンテキストを指定
     "build": {
-        "dockerfile": "./Dockerfile"
+        "dockerfile": "./Dockerfile",
+        "context": "."
     },
-    "runArgs": [
-        "--gpus", "all"
-    ],
+
+    // コンテナ起動時に /dev/init を使うかどうか
     "init": true,
+
+    // VSCode のカスタマイズ設定
     "customizations": {
         "vscode": {
             "settings": {
+                // Python の実行環境パス
                 "python.defaultInterpreterPath": "/opt/conda/bin/python",
                 "python.condaPath": "/opt/conda/bin/mamba",
+
+                // Pythonファイルの自動整形・lint設定例
                 "[python]": {
                     "editor.formatOnSave": true,
                     "editor.codeActionsOnSave": {
@@ -21,6 +29,7 @@
                     "editor.defaultFormatter": "charliermarsh.ruff"
                 }
             },
+            // 必要な拡張機能をインストール
             "extensions": [
                 "ms-python.python",
                 "charliermarsh.ruff",
@@ -30,12 +39,7 @@
             ]
         }
     },
-    "features": {
-        // https://github.com/rocker-org/devcontainer-features/tree/main/src/miniforge
-        "ghcr.io/rocker-org/devcontainer-features/miniforge:latest": {
-            "version": "latest",
-            "variant": "Mambaforge"
-        }
-    },
+
+    // コンテナ起動後に実行するコマンド
     "postCreateCommand": "/bin/bash ${containerWorkspaceFolder}/.devcontainer/setup.sh"
 }

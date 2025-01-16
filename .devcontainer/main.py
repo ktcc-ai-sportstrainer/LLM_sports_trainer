@@ -121,6 +121,6 @@ for s in graph.stream(AgentState(query=summary)):
 print(memory.buffer)
 # agentの実行
 
-result = agent.run(query=summary)
-print(result)
-print(memory.buffer)
+# result = agent.run(query=summary)
+# print(result)
+# print(memory.buffer)
