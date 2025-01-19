@@ -322,9 +322,9 @@ class strakezone:
         
         def batspeed(frame):
             speed_list=[]
-            for frame_number in range(frame):
+            for frame_number in range(len(frames) - 1):
                 Inpactpoint=strakezone.inpact_point(frame_number)
-                if Inpactpoint[1]<0:
+                if Inpactpoint[1]>0:
                     nextInpactpoint=strakezone.inpact_point(frame_number+1)
                     ratio=fix.ratio(193)
                     speed=(nextInpactpoint-Inpactpoint)/ratio/(0.0333)
@@ -434,5 +434,18 @@ print(idealgravity)
 judge=strakezone.calculate_strakejudege(len(skeleton_frames))
 print(judge)
 
-speed=strakezone.batspeed(len(skeleton_frames))
+speed=strakezone.batspeed(skeleton_frames)
 print(speed)
+
+for i in range(240,243):   
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    frame_to_save = i  # 例として50フレーム目を指定
+
+     #animate関数を直接呼び出し
+    animation_instance.animate(frame_to_save)
+
+
+    # 画像を保存
+    plt.savefig(f"frame_{frame_to_save}.png")  
+
