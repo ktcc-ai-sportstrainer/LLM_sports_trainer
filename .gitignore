@@ -1,7 +1,5 @@
 .env
 .idea
-*.tar.xz
-*.pyc
 wandb
 MotionAGFormer/checkpoint/
 MotionAGFormer/run/output/
