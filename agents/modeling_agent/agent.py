@@ -1,17 +1,18 @@
-import numpy as np
-import torch
-import json
 import os
-from typing import Dict, Any, List, Tuple
+import json
+import subprocess
+from typing import Dict, Any, List
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.base import BaseAgent
 from utils.video import VideoProcessor
-from models.internal.motion import MotionData, SwingAnalysis
 
 class ModelingAgent(BaseAgent):
     def __init__(self, llm: ChatOpenAI):
+        """
+        llm: ChatOpenAI のインスタンス
+        """
         super().__init__(llm)
         self.video_processor = VideoProcessor()
         
@@ -19,146 +20,136 @@ class ModelingAgent(BaseAgent):
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
         with open(prompt_path, "r", encoding="utf-8") as f:
             prompts = json.load(f)
-            
+
+        # 既存の analysis_prompt, visualization_prompt を読み込む
         self.analysis_prompt = ChatPromptTemplate.from_template(prompts["analysis_prompt"])
-        self.metrics = SwingMetrics()  # スイング分析用メトリクスクラス
+        self.visualization_prompt = ChatPromptTemplate.from_template(prompts["visualization_prompt"])
         
-    async def run(self, video_path: str) -> Dict[str, Any]:
-        """動画を受け取り、3D姿勢推定と動作解析を行う"""
-        # 1. 動画からフレームを抽出
-        frames = self.video_processor.read_video(video_path)
-        
-        # 2. 3D姿勢推定の実行
-        keypoints_3d = await self._estimate_3d_poses(frames)
-        
-        # 3. スイングフェーズの検出
-        phases = self.metrics.detect_swing_phases(keypoints_3d)
-        
-        # 4. 各種メトリクスの計算
-        metrics = await self._calculate_metrics(keypoints_3d, phases)
-        
-        # 5. 技術的な分析の生成
-        analysis_result = await self._generate_analysis(phases, metrics)
-        
-        # 6. 可視化データの生成
-        visualization_data = self._generate_visualization(keypoints_3d, phases)
-        
-        return self.create_output(
-            output_type="motion_analysis",
-            content={
-                "motion_data": MotionData(
-                    keypoints_3d=keypoints_3d.tolist(),
-                    frame_count=len(frames)
-                ).dict(),
-                "swing_analysis": SwingAnalysis(
-                    phase_timings=phases,
-                    key_metrics=metrics,
-                    issues_found=analysis_result["issues"],
-                    strengths=analysis_result["strengths"]
-                ).dict(),
-                "visualization": visualization_data
-            }
-        ).dict()
+        # 新たに comparison_prompt を追加 (prompts.json に追記済み)
+        self.comparison_prompt = ChatPromptTemplate.from_template(prompts["comparison_prompt"])
 
-    async def _estimate_3d_poses(self, frames: np.ndarray) -> np.ndarray:
-        """MotionAGFormerによる3D姿勢推定"""
-        model = self._load_model()
-        
-        # バッチ処理のための準備
-        processed_frames = self._preprocess_frames(frames)
-        
-        # 推定の実行
-        with torch.no_grad():
-            predictions = model(processed_frames)
-        
-        # 後処理
-        keypoints_3d = self._postprocess_predictions(predictions)
-        
-        return keypoints_3d
+    async def run(self,
+                  user_video_path: str,
+                  ideal_video_path: str) -> Dict[str, Any]:
+        """
+        2つの動画（ユーザーのスイングと理想のスイング）を
+        MotionAGFormer + JsonAnalist.py で解析し、
+        差分比較のフィードバックを加えた結果を返す。
+        """
 
-    async def _calculate_metrics(
-        self,
-        keypoints_3d: np.ndarray,
-        phases: Dict[str, int]
-    ) -> Dict[str, float]:
-        """スイング動作の各種メトリクスを計算"""
-        metrics = {}
-        
-        # バットスピード
-        metrics["bat_speed"] = self.metrics.calculate_bat_speed(
-            keypoints_3d, phases["contact"]
+        # 1. 各動画を 3D推定
+        user_json_path = await self._estimate_3d_poses(user_video_path, "output/user_swing")
+        ideal_json_path = await self._estimate_3d_poses(ideal_video_path, "output/ideal_swing")
+
+        # 2. JsonAnalist.py による分析
+        user_analysis = await self._analyze_3d_json(user_json_path)
+        ideal_analysis = await self._analyze_3d_json(ideal_json_path)
+
+        # 3. 差分算出
+        differences = self._calculate_differences(user_analysis, ideal_analysis)
+
+        # 4. LLMに比較用データを投げてフィードバック生成
+        comparison_feedback = await self._generate_comparison_feedback(
+            user_analysis, ideal_analysis, differences
         )
-        
-        # 回転速度（腰、肩）
-        hip_speed = self.metrics.calculate_rotation_speed(keypoints_3d, "hips")
-        shoulder_speed = self.metrics.calculate_rotation_speed(keypoints_3d, "shoulders")
-        metrics["hip_rotation_speed"] = hip_speed
-        metrics["shoulder_rotation_speed"] = shoulder_speed
-        
-        # 回転の連動性
-        metrics["rotation_sequence"] = self.metrics.evaluate_rotation_sequence(
-            keypoints_3d, phases
-        )
-        
-        # 重心移動
-        metrics["weight_shift"] = self.metrics.analyze_weight_shift(keypoints_3d, phases)
-        
-        # スイング平面
-        metrics["swing_plane_angle"] = self.metrics.calculate_swing_plane(keypoints_3d)
-        
-        return metrics
 
-    async def _generate_analysis(
-        self,
-        phases: Dict[str, int],
-        metrics: Dict[str, float]
-    ) -> Dict[str, List[str]]:
-        """メトリクスを基に技術的な分析を生成"""
+        # 5. 結果をまとめて返却
+        return {
+            "user_analysis": user_analysis,
+            "ideal_analysis": ideal_analysis,
+            "differences": differences,
+            "comparison_feedback": comparison_feedback
+        }
+
+    async def _estimate_3d_poses(self, video_path: str, output_dir: str) -> str:
+        """
+        1つの動画に対する3D姿勢推定を行い、生成されたJSONファイルのパスを返す。
+        - 内部的には MotionAGFormer/run/vis.py をサブプロセス呼び出ししている想定
+        - 出力先を output_dir/3d_result.json とし、それを返す
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        # vis.py に引数を渡して実行する例
+        cmd = [
+            "python", "MotionAGFormer/run/vis.py",
+            "--video", video_path,
+            "--output", output_dir
+        ]
+        subprocess.run(cmd, check=True)
+
+        # vis.py 側で "3d_result.json" という名前で保存される想定
+        json_path = os.path.join(output_dir, "3d_result.json")
+        return json_path
+
+    async def _analyze_3d_json(self, json_file_path: str) -> Dict[str, Any]:
+        """
+        JsonAnalist.py による解析を行う。
+        - "--input" に 3D推定jsonを指定し、標準出力に結果が JSON で出る想定
+        - Pythonでサブプロセスを呼び出し、stdoutを json.loads して返す
+        """
+        cmd = ["python", "MotionAGFormer/JsonAnalist.py", "--input", json_file_path]
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+        # JsonAnalist.py が stdout で JSON を返す想定
+        analysis_result = json.loads(proc.stdout)
+        return analysis_result
+
+    def _calculate_differences(self,
+                               user_analysis: Dict[str, Any],
+                               ideal_analysis: Dict[str, Any]
+                               ) -> List[Dict[str, Any]]:
+        """
+        2つの分析結果（user / ideal）を比較し、差分を返す。
+        - metricごとに user, ideal の値を見て 'gap' を計算
+        - 必要に応じて suggestions など付与しても良い
+        """
+        differences = []
+
+        # 例: バット速度の比較
+        user_speed = user_analysis.get("bat_speed", 0.0)
+        ideal_speed = ideal_analysis.get("bat_speed", 0.0)
+        gap_speed = ideal_speed - user_speed
+        differences.append({
+            "metric": "bat_speed",
+            "user_value": user_speed,
+            "ideal_value": ideal_speed,
+            "gap": gap_speed
+        })
+
+        # 例: 重心移動
+        user_weight_shift = user_analysis.get("weight_shift", 0.0)
+        ideal_weight_shift = ideal_analysis.get("weight_shift", 0.0)
+        gap_weight = ideal_weight_shift - user_weight_shift
+        differences.append({
+            "metric": "weight_shift",
+            "user_value": user_weight_shift,
+            "ideal_value": ideal_weight_shift,
+            "gap": gap_weight
+        })
+
+        # 他に hips_rotation_speed, shoulder_rotation_speed など続けて比較
+        # ...
+
+        return differences
+
+    async def _generate_comparison_feedback(self,
+                                            user_analysis: Dict[str, Any],
+                                            ideal_analysis: Dict[str, Any],
+                                            differences: List[Dict[str, Any]]) -> str:
+        """
+        comparison_prompt を用いて2つのスイング比較に基づく
+        フィードバック（課題/強み/改善提案）を LLM に出してもらう。
+        """
+        # 比較用データを整形
+        comparison_input = {
+            "user_analysis": user_analysis,
+            "ideal_analysis": ideal_analysis,
+            "differences": differences
+        }
+        input_text = json.dumps(comparison_input, ensure_ascii=False, indent=2)
+
+        # comparison_prompt を呼び出し
         response = await self.llm.ainvoke(
-            self.analysis_prompt.format(
-                phases=json.dumps(phases, ensure_ascii=False),
-                metrics=json.dumps(metrics, ensure_ascii=False)
-            )
+            self.comparison_prompt.format(comparison_data=input_text)
         )
-        
-        # 応答をパース
-        analysis = json.loads(response.content)
-        return {
-            "issues": analysis["issues"],
-            "strengths": analysis["strengths"]
-        }
-
-    def _generate_visualization(
-        self,
-        keypoints_3d: np.ndarray,
-        phases: Dict[str, int]
-    ) -> Dict[str, Any]:
-        """可視化用のデータを生成"""
-        # キーポイントの軌跡データ
-        trajectories = self._calculate_trajectories(keypoints_3d)
-        
-        # フェーズごとのハイライト
-        highlights = self._create_phase_highlights(keypoints_3d, phases)
-        
-        return {
-            "trajectories": trajectories,
-            "phase_highlights": highlights,
-            "keyframes": self._select_keyframes(keypoints_3d, phases)
-        }
-
-    def _load_model(self):
-        """MotionAGFormerモデルの読み込み"""
-        model = MotionAGFormer(
-            n_layers=16,
-            dim_feat=128,
-            dim_rep=512,
-            dim_out=3
-        )
-        
-        checkpoint = torch.load('checkpoint/motionagformer-b-h36m.pth.tr')
-        model.load_state_dict(checkpoint['model'])
-        model.eval()
-        
-        return model.cuda() if torch.cuda.is_available() else model
-
-    # その他の補助メソッド（_preprocess_frames, _postprocess_predictions等）は省略
+        return response.content
