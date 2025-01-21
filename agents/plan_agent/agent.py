@@ -1,93 +1,133 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
+import json
+import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+
 from agents.base import BaseAgent
 from models.internal.goal import Goal
 from models.internal.plan import TrainingPlan, TrainingTask
 
 class PlanAgent(BaseAgent):
-    """
-    GoalSettingAgentによって設定された目標を受け取り、
-    練習タスクやステップを提案するエージェント。
-    """
+    """目標に基づいて具体的な練習計画を生成するエージェント"""
 
     def __init__(self, llm: ChatOpenAI):
         super().__init__(llm)
-        self.prompt = ChatPromptTemplate.from_template(
-            """あなたは熟練の野球コーチです。以下の目標と課題を達成するための練習計画を提案してください。
-
-            【目標】
-            主目標: {primary_goal}
-            サブ目標:
-            {sub_goals}
-
-            【技術的課題】
-            {issues}
-
-            出力フォーマット:
-            - タスクのリスト（タイトル、詳細内容、所要時間、注意点、必要な道具）
-            - 全体のステップアップの道筋
-            - 全体での必要時間
-
-            なるべく具体的に、かつ実践的に提案してください。
-            """
-        )
+        
+        # プロンプトの読み込み
+        prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            prompts = json.load(f)
+            
+        self.plan_prompt = ChatPromptTemplate.from_template(prompts["plan_prompt"])
+        self.task_prompt = ChatPromptTemplate.from_template(prompts["task_prompt"])
+        self.progression_prompt = ChatPromptTemplate.from_template(prompts["progression_prompt"])
 
     async def run(
         self,
         goal: Goal,
-        issues: list[str]
+        issues: List[str]
     ) -> Dict[str, Any]:
-        """
-        目標と技術的課題を基に、練習計画を提案する。
-        """
-        sub_goals_str = "\n".join(goal.sub_goals)
-        issues_str = "\n".join(issues)
-
-        response = await self.llm.ainvoke(
-            self.prompt.format(
-                primary_goal=goal.primary_goal,
-                sub_goals=sub_goals_str,
-                issues=issues_str
-            )
+        """練習計画の生成"""
+        # 1. 全体計画の生成
+        overall_plan = await self._generate_overall_plan(goal, issues)
+        
+        # 2. 具体的なタスクの生成
+        tasks = await self._generate_tasks(overall_plan, goal)
+        
+        # 3. 進行計画の生成
+        progression_path = await self._generate_progression_path(tasks, goal)
+        
+        # 4. TrainingPlan オブジェクトの生成
+        training_plan = TrainingPlan(
+            tasks=tasks,
+            progression_path=progression_path,
+            required_time=self._calculate_total_time(tasks)
         )
-
-        # テキストからPlanをパース（簡易パース）
-        training_plan = self._parse_plan(response.content)
-
+        
         return self.create_output(
             output_type="training_plan",
             content=training_plan.dict()
         ).dict()
 
-    def _parse_plan(self, text: str) -> TrainingPlan:
-        """
-        LLM応答を読み取り、TrainingPlanモデルに変換する簡易実装例。
-        """
-        # 非常に簡易的に行頭をみてsplitしたり、正規表現を使ったりできる。
-        # ここではサンプルとして固定的に分割しているが、実際にはプロンプト設計やjson出力を使うのが望ましい。
-
-        # ダミー例
-        tasks = [
-            TrainingTask(
-                title="素振りドリル",
-                description="正しいフォームを意識した素振りを10〜15分行う。鏡を使って自分のフォームをチェックする。",
-                duration="15分",
-                focus_points=["フォーム維持", "グリップの再確認"],
-                equipment=["バット", "鏡"]
-            ),
-            TrainingTask(
-                title="ティーバッティング",
-                description="ティーに置かれたボールを的確に捉える練習。インコース・アウトコースに分けて実施。",
-                duration="20分",
-                focus_points=["インサイドアウト", "下半身の使い方"],
-                equipment=["バット", "ティースタンド", "ボール"]
+    async def _generate_overall_plan(
+        self,
+        goal: Goal,
+        issues: List[str]
+    ) -> Dict[str, Any]:
+        """全体的な練習計画の生成"""
+        response = await self.llm.ainvoke(
+            self.plan_prompt.format(
+                primary_goal=goal.primary_goal,
+                sub_goals=goal.sub_goals,
+                metrics=goal.metrics,
+                issues=issues
             )
-        ]
-
-        plan = TrainingPlan(
-            tasks=tasks,
-            progression_path="最初はフォーム矯正、次にタイミング合わせを重点に、最後に実践形式へ移行",
-            required_time="1時間程度"
         )
-        return plan
+        
+        plan_dict = json.loads(response.content)
+        return plan_dict
+
+    async def _generate_tasks(
+        self,
+        overall_plan: Dict[str, Any],
+        goal: Goal
+    ) -> List[TrainingTask]:
+        """具体的な練習タスクの生成"""
+        tasks = []
+        for area in overall_plan["training_areas"]:
+            response = await self.llm.ainvoke(
+                self.task_prompt.format(
+                    training_area=area,
+                    goal=goal.dict()
+                )
+            )
+            
+            task_dict = json.loads(response.content)
+            task = TrainingTask(
+                title=task_dict["title"],
+                description=task_dict["description"],
+                duration=task_dict["duration"],
+                focus_points=task_dict["focus_points"],
+                equipment=task_dict["equipment"]
+            )
+            tasks.append(task)
+        
+        return tasks
+
+    async def _generate_progression_path(
+        self,
+        tasks: List[TrainingTask],
+        goal: Goal
+    ) -> str:
+        """段階的な上達計画の生成"""
+        response = await self.llm.ainvoke(
+            self.progression_prompt.format(
+                tasks=json.dumps([t.dict() for t in tasks], ensure_ascii=False),
+                goal=goal.dict()
+            )
+        )
+        
+        path_dict = json.loads(response.content)
+        return path_dict["progression_path"]
+
+    def _calculate_total_time(self, tasks: List[TrainingTask]) -> str:
+        """全タスクの所要時間を計算"""
+        total_minutes = 0
+        for task in tasks:
+            # 時間文字列（例：「30分」）から数値を抽出
+            time_str = task.duration
+            try:
+                minutes = int(''.join(filter(str.isdigit, time_str)))
+                total_minutes += minutes
+            except ValueError:
+                continue
+        
+        # 時間と分に変換
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        
+        if hours > 0:
+            return f"{hours}時間{minutes}分" if minutes > 0 else f"{hours}時間"
+        else:
+            return f"{minutes}分"

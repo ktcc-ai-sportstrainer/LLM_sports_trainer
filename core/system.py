@@ -1,112 +1,161 @@
-# core/system.py
-
+from typing import Dict, Any
+import traceback
+from datetime import datetime
 import asyncio
-from typing import Any, Dict, List
 
 from langchain_openai import ChatOpenAI
 
-from agents.interactive_agent.agent import InteractiveAgent
-from agents.modeling_agent.agent import ModelingAgent
-from agents.goal_setting_agent.agent import GoalSettingAgent
-from agents.plan_agent.agent import PlanAgent
-from agents.search_agent.agent import SearchAgent
-from agents.summarize_agent.agent import SummarizeAgent
+from core.state import SystemState
+from core.graph import WorkflowGraph
+from core.logger import SystemLogger
 
-from models.input.persona import Persona
-from models.input.policy import TeachingPolicy
-from models.internal.conversation import ConversationHistory
+from agents.interactive_agent import InteractiveAgent
+from agents.modeling_agent import ModelingAgent
+from agents.goal_setting_agent import GoalSettingAgent
+from agents.plan_agent import PlanAgent
+from agents.search_agent import SearchAgent
+from agents.summarize_agent import SummarizeAgent
 
 class SwingCoachingSystem:
-    """
-    システム全体を制御するクラス。
-    エージェントを順番に呼び出し、結果をまとめる。
-    """
-
+    """野球スイングコーチングシステム全体を制御するクラス"""
+    
     def __init__(self, config: Dict[str, Any]):
         self.config = config
+        self.logger = SystemLogger()
+        
+        # LLMの初期化
         self.llm = ChatOpenAI(
-            openai_api_key=config.get("openai_api_key", ""),
-            model=config.get("model_name", "gpt-3.5-turbo"),
+            openai_api_key=config.get("openai_api_key"),
+            model=config.get("model_name", "gpt-4"),
             temperature=0.7
         )
+        
+        # エージェントの初期化
+        self.agents = {
+            "interactive": InteractiveAgent(self.llm),
+            "modeling": ModelingAgent(self.llm),
+            "goal_setting": GoalSettingAgent(self.llm),
+            "plan": PlanAgent(self.llm),
+            "search": SearchAgent(self.llm),
+            "summary": SummarizeAgent(self.llm)
+        }
+        
+        # 各エージェントのロガーを設定
+        for agent_name in self.agents:
+            self.logger.setup_agent_logger(agent_name)
 
-        # 各エージェントの初期化
-        self.interactive_agent = InteractiveAgent(self.llm)
-        self.modeling_agent = ModelingAgent(self.llm)
-        self.goal_agent = GoalSettingAgent(self.llm)
-        self.plan_agent = PlanAgent(self.llm)
-        self.search_agent = SearchAgent(self.llm)
-        self.summarize_agent = SummarizeAgent(self.llm)
-
-    def run(
+    async def run(
         self,
         persona_data: Dict[str, Any],
         policy_data: Dict[str, Any],
-        video_path: str,
-        existing_conversation: List[Any] = None
+        video_path: str
     ) -> Dict[str, Any]:
-        # Persona, Policy, ConversationHistory の生成
-        persona = Persona(**persona_data)
-        policy = TeachingPolicy(**policy_data)
-        conv_history = ConversationHistory(messages=existing_conversation or [])
-
-        # 1. InteractiveAgent
-        interactive_res = asyncio.run(
-            self.interactive_agent.run(persona, policy, conv_history)
-        )
-        questions = interactive_res["content"]["questions"]
-
-        # 2. ModelingAgent
-        modeling_res = asyncio.run(
-            self.modeling_agent.run(video_path)
-        )
-        # 解析結果
-        motion_analysis_desc = modeling_res["content"]["analysis_description"]
-        swing_analysis = modeling_res["content"]["swing_analysis"]
-        issues_found = swing_analysis["issues_found"]  # 課題点
-
-        # 3. GoalSettingAgent
-        conversation_insights = ["ユーザー回答から得られた追加の悩み", "気になるフォームのポイント"]
-        goal_res = asyncio.run(
-            self.goal_agent.run(
-                persona=persona,
-                policy=policy,
-                conversation_insights=conversation_insights,
-                motion_analysis=motion_analysis_desc
+        """システム全体の実行を管理"""
+        try:
+            # システム状態の初期化
+            state = SystemState(
+                persona_data=persona_data,
+                policy_data=policy_data,
+                video_path=video_path
             )
-        )
-        final_goal = goal_res["content"]  # dict形式
-
-        # 4. PlanAgent
-        plan_res = asyncio.run(
-            self.plan_agent.run(
-                goal=final_goal,
-                issues=issues_found
+            
+            # ワークフローグラフの初期化
+            workflow = WorkflowGraph(state, self.logger)
+            
+            # ワークフローの妥当性検証
+            if not workflow.validate_workflow():
+                raise ValueError("Invalid workflow configuration")
+            
+            # エージェント実行関数の準備
+            agent_executors = {
+                name: self._create_executor(agent)
+                for name, agent in self.agents.items()
+            }
+            
+            # ワークフローの実行
+            start_time = datetime.now()
+            self.logger.log_info("Starting workflow execution")
+            
+            await workflow.execute_workflow(agent_executors)
+            
+            # 実行時間の記録
+            execution_time = (datetime.now() - start_time).total_seconds()
+            self.logger.log_info(f"Workflow completed in {execution_time:.2f} seconds")
+            
+            # 最終結果の取得
+            result = self._prepare_final_result(state)
+            
+            return result
+            
+        except Exception as e:
+            self.logger.log_error_details(
+                error=e,
+                context={
+                    "persona_data": persona_data,
+                    "policy_data": policy_data,
+                    "video_path": video_path
+                }
             )
-        )
+            raise
 
-        # 5. SearchAgent (必要に応じてキーワード検索)
-        sub_goals = final_goal.get("sub_goals", [])
-        search_res = asyncio.run(
-            self.search_agent.run(keywords=sub_goals)
-        )
+    def _create_executor(self, agent: Any) -> callable:
+        """エージェント実行関数の生成"""
+        async def execute(dependencies: Dict[str, Any]) -> Dict[str, Any]:
+            agent_name = agent.__class__.__name__.lower().replace("agent", "")
+            
+            try:
+                # 実行開始をログ
+                self.logger.log_info(f"Executing {agent_name}", agent=agent_name)
+                self.logger.log_agent_input(agent_name, dependencies)
+                
+                # エージェントの実行
+                start_time = datetime.now()
+                result = await agent.run(**dependencies)
+                execution_time = (datetime.now() - start_time).total_seconds()
+                
+                # 結果とメトリクスをログ
+                self.logger.log_agent_output(agent_name, result)
+                self.logger.log_execution_time(agent_name, execution_time)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.log_error_details(
+                    error=e,
+                    agent=agent_name,
+                    context=dependencies
+                )
+                raise
+                
+        return execute
 
-        # 6. SummarizeAgent
-        summary_res = asyncio.run(
-            self.summarize_agent.run(
-                analysis=swing_analysis,
-                goal=final_goal,
-                plan=plan_res["content"]
-            )
-        )
-
-        # 結果まとめ
+    def _prepare_final_result(self, state: SystemState) -> Dict[str, Any]:
+        """最終結果の準備"""
         result = {
-            "interactive_questions": questions,
-            "motion_analysis": motion_analysis_desc,
-            "goal_setting": final_goal,
-            "training_plan": plan_res["content"],
-            "search_results": search_res["content"],
-            "final_summary": summary_res["content"]
+            "interactive_questions": self._extract_questions(state),
+            "motion_analysis": state.motion_analysis,
+            "goal_setting": state.goals,
+            "training_plan": state.training_plan,
+            "search_results": state.search_results,
+            "final_summary": state.final_summary
         }
+        
+        # 実行メトリクスの追加
+        result["execution_metrics"] = {
+            "completed_agents": [
+                agent for agent in self.agents
+                if getattr(state, f"{agent}_completed")
+            ],
+            "error_count": len(state.errors),
+            "conversation_turns": len(state.conversation_history)
+        }
+        
         return result
+
+    def _extract_questions(self, state: SystemState) -> list[str]:
+        """対話エージェントの質問を抽出"""
+        questions = []
+        for message in state.conversation_history:
+            if message.get("role") == "assistant" and "question" in message:
+                questions.append(message["question"])
+        return questions
