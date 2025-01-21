@@ -1,6 +1,9 @@
+# app.py
+
 import streamlit as st
 from config import load_config
 from core.system import SwingCoachingSystem
+import os
 
 def main():
     st.title("野球スイングコーチングAI")
@@ -26,20 +29,27 @@ def main():
     )
     goal = st.sidebar.text_input("達成したい目標", "安定したコンタクト")
 
-    st.write("## スイング動画アップロード")
-    uploaded_file = st.file_uploader("スイング動画をアップロードしてください", type=["mp4", "mov", "avi"])
+    # 2つの動画ファイルを受け取る
+    st.write("## あなたのスイング動画")
+    user_uploaded_file = st.file_uploader("アップロードしてください", type=["mp4","mov","avi"])
+    st.write("## 理想のスイング動画")
+    ideal_uploaded_file = st.file_uploader("理想とする選手や自身の別の好調時動画など", type=["mp4","mov","avi"])
 
     if st.button("コーチング開始"):
-        if uploaded_file is None:
-            st.error("動画ファイルをアップロードしてください。")
+        if user_uploaded_file is None or ideal_uploaded_file is None:
+            st.error("あなたのスイング動画と理想のスイング動画、両方をアップロードしてください。")
             return
 
-        # 一時ファイルに書き出し
-        temp_path = f"temp_{uploaded_file.name}"
-        with open(temp_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+        # 一時ファイルに保存
+        user_temp_path = f"temp_user_{user_uploaded_file.name}"
+        with open(user_temp_path, "wb") as f:
+            f.write(user_uploaded_file.getbuffer())
 
-        # ペルソナ情報と指導方針をまとめる
+        ideal_temp_path = f"temp_ideal_{ideal_uploaded_file.name}"
+        with open(ideal_temp_path, "wb") as f:
+            f.write(ideal_uploaded_file.getbuffer())
+
+        # ペルソナ情報と指導方針
         persona_data = {
             "age": age,
             "experience": experience,
@@ -55,46 +65,52 @@ def main():
             "goal": goal
         }
 
-        # コンフィグ読み込み & システム実行
-        config = load_config()
+        # システム実行
+        config = load_config.load_config()
         system = SwingCoachingSystem(config)
 
         with st.spinner("分析中...少々お待ちください。"):
-            result = system.run(persona_data, policy_data, temp_path)
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(
+                system.run(
+                    persona_data,
+                    policy_data,
+                    user_video_path=user_temp_path,
+                    ideal_video_path=ideal_temp_path
+                )
+            )
 
         # 結果表示
         st.success("分析が完了しました！")
 
-        # インタラクティブエージェントからの追加質問を表示
         st.subheader("1. InteractiveAgentの追加質問")
-        for q in result["interactive_questions"]:
+        for q in result.get("interactive_questions", []):
             st.write("- " + q)
 
-        # スイング解析の要約
         st.subheader("2. スイング解析 (ModelingAgent)")
-        st.write(result["motion_analysis"])
+        st.json(result.get("motion_analysis", {}))
 
-        # 目標設定
         st.subheader("3. 目標設定 (GoalSettingAgent)")
-        st.json(result["goal_setting"])
+        st.json(result.get("goal_setting", {}))
 
-        # 練習計画
         st.subheader("4. 練習計画 (PlanAgent)")
-        st.json(result["training_plan"])
+        st.json(result.get("training_plan", {}))
 
-        # 検索結果 (SearchAgent)
         st.subheader("5. 参考リソース (SearchAgent)")
-        st.json(result["search_results"])
+        st.json(result.get("search_results", {}))
 
-        # 最終サマリー (SummarizeAgent)
-        st.subheader("6. 最終まとめ")
-        final_summary = result["final_summary"]["summary"]
-        st.write(final_summary)
+        st.subheader("6. 最終まとめ (SummarizeAgent)")
+        final_summary = result.get("final_summary", {})
+        if "summary" in final_summary:
+            st.write(final_summary["summary"])
 
-        # アップロードした一時ファイルを削除（必要に応じて）
-        import os
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        # 後始末: 一時ファイル削除
+        if os.path.exists(user_temp_path):
+            os.remove(user_temp_path)
+        if os.path.exists(ideal_temp_path):
+            os.remove(ideal_temp_path)
 
 if __name__ == "__main__":
     main()

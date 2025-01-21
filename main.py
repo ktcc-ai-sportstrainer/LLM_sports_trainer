@@ -1,13 +1,19 @@
+# main.py
+
 import argparse
 import json
 import os
+import asyncio
 from config.load_config import load_config
 from core.system import SwingCoachingSystem
 
-
 def main():
     parser = argparse.ArgumentParser(description="Swing Coaching System CLI")
-    parser.add_argument("--video", type=str, required=True, help="Path to swing video file")
+
+    # 従来は --video だけだったが、2本に分割
+    parser.add_argument("--user_video", type=str, required=True, help="Path to user's swing video file")
+    parser.add_argument("--ideal_video", type=str, required=True, help="Path to ideal swing video file")
+
     parser.add_argument("--age", type=int, default=20, help="Age of the player")
     parser.add_argument("--experience", type=str, default="1年", help="Baseball experience")
     parser.add_argument("--level", type=str, default="初心者", help="Current skill level")
@@ -22,7 +28,7 @@ def main():
 
     args = parser.parse_args()
 
-    # ペルソナ情報と指導方針をまとめる
+    # ペルソナ・ポリシー情報
     persona_data = {
         "age": args.age,
         "experience": args.experience,
@@ -39,20 +45,28 @@ def main():
         "goal": args.goal
     }
 
-    # コンフィグ読み込み & システムインスタンス化
-    config = load_config()  # 例: config/config.yaml などから読み込む想定
+    # コンフィグ読み込み
+    config = load_config()
     system = SwingCoachingSystem(config)
 
-    # 実行：全エージェントを順番に動かして最終結果を取得
-    result = system.run(persona_data, policy_data, args.video)
+    # 非同期実行
+    loop = asyncio.get_event_loop()
+    result = loop.run_until_complete(
+        system.run(
+            persona_data,
+            policy_data,
+            user_video_path=args.user_video,
+            ideal_video_path=args.ideal_video
+        )
+    )
 
-    # コンソールに出力（今回はfinal_summaryを中心に表示する例）
+    # 出力
     print("\n--- Interactive Questions ---")
     for q in result["interactive_questions"]:
         print(f"Q: {q}")
 
     print("\n--- Motion Analysis ---")
-    print(result["motion_analysis"])
+    print(json.dumps(result["motion_analysis"], ensure_ascii=False, indent=2))
 
     print("\n--- Goal Setting ---")
     print(json.dumps(result["goal_setting"], ensure_ascii=False, indent=2))
@@ -64,7 +78,9 @@ def main():
     print(json.dumps(result["search_results"], ensure_ascii=False, indent=2))
 
     print("\n--- Final Summary ---")
-    print(result["final_summary"]["summary"])
+    if "summary" in result["final_summary"]:
+        print(result["final_summary"]["summary"])
+
     print("\nDone.")
 
 if __name__ == "__main__":
