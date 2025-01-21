@@ -1,0 +1,27 @@
+{
+    "basic_info": {
+      "name": "山田太郎",
+      "age": 16,
+      "grade": "高校1年",
+      "position": "外野手",
+      "dominant_hand": {
+        "batting": "右",
+        "throwing": "右"
+      },
+      "height": 170,
+      "weight": 65,
+      "experience": {
+        "years": 8,
+        "history": "少年野球(6年)→中学野球(3年)"
+      },
+      "goal": "レギュラー獲得",
+      "practice_time": "平日2時間",
+      "personal_issues": ["タイミングが合わない", "内角が苦手"],
+      "additional_info": "部活動以外で自主練習も行っている"
+    },
+    "coaching_policy": {
+      "philosophy": "基礎技術の徹底",
+      "player_strengths": ["練習熱心", "集中力がある"],
+      "player_weaknesses": ["力に頼りすぎ", "焦りがち"]
+    }
+}
