@@ -66,7 +66,6 @@ class SwingCoachingSystem:
         issues_found = swing_analysis["issues_found"]  # 課題点
 
         # 3. GoalSettingAgent
-        #   ここではダミーで "会話の洞察" をいくつか渡す
         conversation_insights = ["ユーザー回答から得られた追加の悩み", "気になるフォームのポイント"]
         goal_res = asyncio.run(
             self.goal_agent.run(
