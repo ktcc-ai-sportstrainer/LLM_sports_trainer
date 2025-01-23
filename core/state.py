@@ -3,25 +3,17 @@ from datetime import datetime
 from pydantic import BaseModel
 
 class AgentState(TypedDict):
-    # 基本情報
     persona_data: Dict[str, Any]
     policy_data: Dict[str, Any]
-    user_video_path: str
-    ideal_video_path: str
-    
-    # エージェントの出力
     conversation: List[Dict[str, str]]
     motion_analysis: Dict[str, Any]
     goals: Dict[str, Any]
-    plan: Dict[str, Any]
-    resources: Dict[str, Any]
+    search_queries: List[Dict[str, Any]]
+    search_results: Dict[str, Any]
+    tasks: List[Dict[str, Any]]
+    schedule: Dict[str, Any]
     summary: str
     
-    # 実行状態
-    status: str
-    errors: List[Dict[str, Any]]
-    last_agent: str
-
 def create_initial_state(
     persona_data: Dict[str, Any],
     policy_data: Dict[str, Any],

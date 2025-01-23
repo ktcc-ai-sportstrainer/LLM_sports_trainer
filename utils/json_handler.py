@@ -27,3 +27,11 @@ class JSONHandler:
     def save_model(model: BaseModel, file_path: str):
         """PydanticモデルをJSONとして保存"""
         JSONHandler.save_json(model.dict(), file_path)
+        
+    def validate_agent_output(self, agent_name: str, output: Dict[str, Any]) -> bool:
+        validation_schema = {
+            "goal_setting": self._validate_goals_output,
+            "search": self._validate_search_output,
+            "plan": self._validate_plan_output
+        }
+        return validation_schema.get(agent_name, lambda x: True)(output)

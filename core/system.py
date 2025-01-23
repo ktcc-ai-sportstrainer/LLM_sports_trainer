@@ -31,7 +31,7 @@ class SwingCoachingSystem:
         # LLMの初期化
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
-            model=config.get("model_name", "gpt-4"),
+            model=config.get("model_name", "gpt-4o-mini"),
             temperature=0.7
         )
 
@@ -138,52 +138,47 @@ class SwingCoachingSystem:
         else:
             raise ValueError(f"Unknown agent: {agent_name}")
 
-    async def run(
-        self,
-        persona_data: Dict[str, Any],
-        policy_data: Dict[str, Any],
-        user_video_path: str,
-        ideal_video_path: str
-    ) -> Dict[str, Any]:
-        """システムを実行し、最終結果を返す"""
+    async def run(self, persona_data, policy_data, user_video_path, ideal_video_path=None):
         try:
-            # ビデオファイルの存在確認
-            for video_path in [user_video_path, ideal_video_path]:
-                if not os.path.exists(video_path):
-                    raise FileNotFoundError(f"Video file not found: {video_path}")
-
-            # 初期状態の作成
-            initial_state = create_initial_state(
-                persona_data=persona_data,
-                policy_data=policy_data,
-                user_video_path=user_video_path,
-                ideal_video_path=ideal_video_path
+            # エージェントの連携フロー修正
+            interactive_result = await self.agents["interactive"].run(persona_data, policy_data)
+            
+            modeling_result = await self.agents["modeling"].run(
+                user_video_path, ideal_video_path
             )
-
-            # 実行開始時刻の記録
-            initial_state["start_time"] = datetime.now()
-
-            # ワークフローの実行
-            self.logger.log_info("Starting workflow execution")
-            final_state = await self.workflow.ainvoke(initial_state)
-
-            # 実行時間の計算と記録
-            execution_time = (datetime.now() - initial_state["start_time"]).total_seconds()
-            self.logger.log_info(f"Workflow completed in {execution_time:.2f} seconds")
-
-            # 結果の整形と返却
-            return self._format_result(final_state)
+            
+            goal_result = await self.agents["goal_setting"].run(
+                persona_data, 
+                policy_data,
+                interactive_result["conversation_history"],
+                modeling_result
+            )
+            
+            # SearchAgentをPlanAgentに注入
+            search_agent = self.agents["search"]
+            plan_agent = PlanAgent(self.llm, search_agent)
+            
+            plan_result = await plan_agent.run(
+                goal_result["goals"],
+                goal_result["search_queries"]
+            )
+            
+            summary_result = await self.agents["summary"].run(
+                modeling_result,
+                goal_result,
+                plan_result
+            )
+            
+            return self._format_result({
+                "interactive": interactive_result,
+                "modeling": modeling_result,
+                "goals": goal_result,
+                "plan": plan_result,
+                "summary": summary_result
+            })
 
         except Exception as e:
-            self.logger.log_error_details(
-                error=e,
-                context={
-                    "persona_data": persona_data,
-                    "policy_data": policy_data,
-                    "user_video_path": user_video_path,
-                    "ideal_video_path": ideal_video_path
-                }
-            )
+            self.logger.error(f"System error: {str(e)}")
             raise
 
     def _format_result(self, state: AgentState) -> Dict[str, Any]:

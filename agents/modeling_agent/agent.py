@@ -1,170 +1,107 @@
 from typing import Any, Dict, List
 import json
 import os
-import sys
-import subprocess
+import asyncio
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.base import BaseAgent
-from utils.video import VideoProcessor
+from agents.modeling_agent.metrics.swing import SwingMetrics
 
 class ModelingAgent(BaseAgent):
-    def __init__(self, llm: ChatOpenAI):
-        """
-        llm: ChatOpenAI のインスタンス
-        """
-        super().__init__(llm)
-        self.video_processor = VideoProcessor()
+   def __init__(self, llm: ChatOpenAI):
+       super().__init__(llm)
+       self.swing_metrics = SwingMetrics()
+       self.prompts = self._load_prompts()
 
-        # プロンプトの読み込み
-        prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
-        with open(prompt_path, "r", encoding="utf-8") as f:
-            prompts = json.load(f)
+   async def run(self, user_video_path: str, ideal_video_path: str = None) -> Dict[str, Any]:
+       try:
+           # ユーザーのスイング分析
+           user_pose_data = await self._estimate_3d_pose(user_video_path)
+           user_analysis = await self._analyze_swing(user_pose_data)
+           
+           # 理想のスイング動画が与えられた場合は比較分析
+           if ideal_video_path:
+               ideal_pose_data = await self._estimate_3d_pose(ideal_video_path)
+               ideal_analysis = await self._analyze_swing(ideal_pose_data)
+               comparison = await self._compare_swings(user_analysis, ideal_analysis)
+               return {
+                   "user_analysis": user_analysis,
+                   "ideal_analysis": ideal_analysis, 
+                   "comparison": comparison
+               }
+           
+           # 単一動画の場合は一般的な基準との比較
+           else:
+               general_analysis = await self._analyze_single_swing(user_analysis)
+               return {
+                   "user_analysis": user_analysis,
+                   "general_analysis": general_analysis
+               }
 
-        self.analysis_prompt = ChatPromptTemplate.from_template(prompts["analysis_prompt"])
-        self.visualization_prompt = ChatPromptTemplate.from_template(prompts["visualization_prompt"])
-        self.comparison_prompt = ChatPromptTemplate.from_template(prompts["comparison_prompt"])
+       except Exception as e:
+           self.logger.error(f"Error in ModelingAgent: {str(e)}")
+           return {}
 
-    async def run(self, user_video_path: str, ideal_video_path: str) -> Dict[str, Any]:
-        """
-        2つの動画（ユーザーのスイングと理想のスイング）を
-        MotionAGFormer + JsonAnalist で解析し、差分比較。
-        """
-        try:
-            # 1. 3D推定
-            user_json_path = await self._estimate_3d_poses(user_video_path, "output/user_swing")
-            ideal_json_path = await self._estimate_3d_poses(ideal_video_path, "output/ideal_swing")
+   async def _estimate_3d_pose(self, video_path: str) -> Dict[str, Any]:
+       """MotionAGFormerを使用して3D姿勢推定を実行"""
+       process = await asyncio.create_subprocess_exec(
+           "python",
+           "MotionAGFormer/run/vis.py",
+           "--video", video_path,
+           stdout=asyncio.subprocess.PIPE,
+           stderr=asyncio.subprocess.PIPE
+       )
+       stdout, stderr = await process.communicate()
+       
+       if process.returncode != 0:
+           raise Exception(f"3D pose estimation failed: {stderr.decode()}")
+           
+       return json.loads(stdout.decode())
 
-            # 2. 分析
-            user_analysis = await self._analyze_3d_json(user_json_path)
-            ideal_analysis = await self._analyze_3d_json(ideal_json_path)
+   async def _analyze_swing(self, pose_data: Dict[str, Any]) -> Dict[str, Any]:
+       """スイングの各指標を計算"""
+       phases = self.swing_metrics.detect_swing_phases(pose_data)
+       bat_speed = self.swing_metrics.calculate_bat_speed(pose_data, phases["contact"])
+       rotation_speed = self.swing_metrics.calculate_rotation_speed(pose_data, "hips")
+       rotation_sequence = self.swing_metrics.evaluate_rotation_sequence(pose_data, phases)
+       weight_shift = self.swing_metrics.analyze_weight_shift(pose_data, phases)
+       swing_plane = self.swing_metrics.calculate_swing_plane(pose_data)
+       
+       return {
+           "phases": phases,
+           "metrics": {
+               "bat_speed": bat_speed,
+               "rotation_speed": rotation_speed,
+               "rotation_sequence": rotation_sequence,
+               "weight_shift": weight_shift,
+               "swing_plane": swing_plane
+           }
+       }
 
-            # 3. 差分
-            differences = self._calculate_differences(user_analysis, ideal_analysis)
+   async def _compare_swings(
+       self,
+       user_analysis: Dict[str, Any],
+       ideal_analysis: Dict[str, Any]
+   ) -> Dict[str, Any]:
+       """ユーザーと理想のスイングを比較"""
+       prompt = self.prompts["comparison_prompt"].format(
+           user_analysis=json.dumps(user_analysis, ensure_ascii=False),
+           ideal_analysis=json.dumps(ideal_analysis, ensure_ascii=False)
+       )
+       
+       response = await self.llm.ainvoke(prompt)
+       return json.loads(response.content)
 
-            # 4. LLMに比較用データを投げてフィードバックを作る
-            comparison_feedback = await self._generate_comparison_feedback(
-                user_analysis, ideal_analysis, differences
-            )
+   async def _analyze_single_swing(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+       """一般的な基準と比較して分析"""
+       prompt = self.prompts["single_swing_analysis_prompt"].format(
+           swing_analysis=json.dumps(analysis, ensure_ascii=False)
+       )
+       response = await self.llm.ainvoke(prompt)
+       return json.loads(response.content)
 
-            return {
-                "user_analysis": user_analysis,
-                "ideal_analysis": ideal_analysis,
-                "differences": differences,
-                "comparison_feedback": comparison_feedback
-            }
-
-        except Exception as e:
-            self.logger.log_error(f"Error in ModelingAgent: {str(e)}")
-            return {}
-
-    async def _estimate_3d_poses(self, video_path: str, output_dir: str) -> str:
-        """MotionAGFormer/run/vis.py を呼び出して 3D姿勢推定json を生成"""
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 絶対パスを使用
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        vis_script = os.path.join(base_dir, "MotionAGFormer", "run", "vis.py")
-        video_path = os.path.abspath(video_path)
-        output_dir = os.path.abspath(output_dir)
-
-        if not os.path.exists(vis_script):
-            raise FileNotFoundError(f"vis.py script not found at {vis_script}")
-        if not os.path.exists(video_path):
-            raise FileNotFoundError(f"Video file not found at {video_path}")
-
-        cmd = [
-            sys.executable,
-            vis_script,
-            "--video", video_path,
-            "--output", output_dir
-        ]
-        subprocess.run(cmd, check=True)
-
-        # 出力されるJSONファイルのパス
-        json_path = os.path.join(output_dir, "3d_result.json")
-        if not os.path.exists(json_path):
-            raise FileNotFoundError(f"3D pose estimation failed, JSON not found at {json_path}")
-
-        return json_path
-
-    async def _analyze_3d_json(self, json_file_path: str) -> Dict[str, Any]:
-        """JsonAnalist.py で解析し、stdoutに出る結果を JSON ロードして返す"""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        analyzer_script = os.path.join(base_dir, "MotionAGFormer", "JsonAnalist.py")
-
-        if not os.path.exists(analyzer_script):
-            raise FileNotFoundError(f"JsonAnalist.py not found at {analyzer_script}")
-
-        cmd = [sys.executable, analyzer_script, "--input", json_file_path]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-        try:
-            analysis_result = json.loads(proc.stdout)
-            return analysis_result
-        except json.JSONDecodeError as e:
-            self.logger.log_error(f"Error parsing analysis output: {str(e)}")
-            return {}
-
-    def _calculate_differences(self,
-                           user_analysis: Dict[str, Any],
-                           ideal_analysis: Dict[str, Any]
-                           ) -> List[Dict[str, Any]]:
-        """2つの分析結果を比較し、差分一覧を返す"""
-        differences = []
-
-        metrics_to_compare = [
-            ("bat_speed", "バットスピード"),
-            ("weight_shift", "重心移動"),
-            ("rotation_speed", "回転スピード"),
-            ("impact_timing", "インパクトタイミング")
-        ]
-
-        for metric_key, metric_name in metrics_to_compare:
-            user_value = user_analysis.get(metric_key, 0.0)
-            ideal_value = ideal_analysis.get(metric_key, 0.0)
-            gap = ideal_value - user_value
-
-            differences.append({
-                "metric": metric_name,
-                "user_value": user_value,
-                "ideal_value": ideal_value,
-                "gap": gap,
-                "percentage_diff": (gap / ideal_value * 100) if ideal_value != 0 else 0
-            })
-
-        return differences
-
-    async def _generate_comparison_feedback(self,
-                                        user_analysis: Dict[str, Any],
-                                        ideal_analysis: Dict[str, Any],
-                                        differences: List[Dict[str, Any]]) -> str:
-        """comparison_prompt を使ってLLMに差分を分析してもらい、
-        課題や改善提案をまとめたテキストを得る
-        """
-        comparison_input = {
-            "user_analysis": user_analysis,
-            "ideal_analysis": ideal_analysis,
-            "differences": differences
-        }
-        input_text = json
-    
-    async def _generate_comparison_feedback(self,
-                                        user_analysis: Dict[str, Any],
-                                        ideal_analysis: Dict[str, Any],
-                                        differences: List[Dict[str, Any]]) -> str:
-        """comparison_prompt を使ってLLMに差分を分析してもらい、
-        課題や改善提案をまとめたテキストを得る
-        """
-        comparison_input = {
-            "user_analysis": user_analysis,
-            "ideal_analysis": ideal_analysis,
-            "differences": differences
-        }
-        input_text = json.dumps(comparison_input, ensure_ascii=False, indent=2)
-
-        response = await self.llm.ainvoke(
-            self.comparison_prompt.format(comparison_data=input_text)
-        )
-        return response.content
+   def _load_prompts(self) -> Dict[str, str]:
+       prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
+       with open(prompt_path, "r", encoding="utf-8") as f:
+           return json.load(f)

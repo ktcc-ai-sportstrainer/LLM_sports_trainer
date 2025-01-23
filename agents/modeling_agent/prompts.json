@@ -1,8 +1,7 @@
 {
-    "analysis_prompt": "あなたは野球のバッティング技術の専門家です。以下のスイング分析データを基に、技術的な分析を行ってください。\n\nフェーズタイミング:\n{phases}\n\n計測された指標:\n{metrics}\n\n以下の形式でJSONを出力してください：\n{\n    \"issues\": [\n        \"課題点1\",\n        \"課題点2\",\n        ...\n    ],\n    \"strengths\": [\n        \"強み1\",\n        \"強み2\",\n        ...\n    ]\n}\n\n以下の観点から分析してください：\n1. タイミング（各フェーズの開始タイミング）\n2. キネマティックチェーン（回転の連動性）\n3. 重心移動の効率性\n4. スイング軌道の適切性\n5. バットスピードとその生成過程",
-    
-    "visualization_prompt": "与えられた3D姿勢データとフェーズ情報を使って、効果的な可視化方法を提案してください。\n\nキーポイントデータ:\n{keypoints_summary}\n\nフェーズ情報:\n{phases}\n\n以下の要素を含めた可視化を提案してください：\n1. 重要な軌道の表示\n2. フェーズごとのハイライト\n3. キーポーズの選択\n4. 視点の選択\n\n出力形式：\n{\n    \"visualization_elements\": [\n        {\n            \"type\": \"要素の種類\",\n            \"description\": \"表示内容の説明\",\n            \"technical_params\": {}\n        }\n    ]\n}",
+    "comparison_prompt": "以下のスイング分析データを比較し、主な違いと改善点を特定してください。\n\nユーザーの分析結果:\n{user_analysis}\n\n理想のスイング分析結果:\n{ideal_analysis}\n\n以下の形式でJSONを出力してください:\n{\n    \"key_differences\": [\n        {\n            \"aspect\": \"比較項目\",\n            \"difference\": \"具体的な違い\",\n            \"improvement\": \"改善提案\"\n        }\n    ],\n    \"priority_issues\": [\"優先的に改善すべき項目\"],\n    \"positive_points\": [\"ユーザーのスイングの良い点\"]\n}",
 
-    "comparison_prompt": "以下の2つのスイング分析結果と、その差分情報を入力として、ユーザーが何に注力すべきかを考察してください。...\n\n出力形式はJSONで..."
+    "single_swing_analysis_prompt": "以下のスイング分析データを、一般的な野球の打撃フォームの基準と比較して分析してください。\n\nスイング分析結果:\n{swing_analysis}\n\n以下の形式でJSONを出力してください:\n{\n    \"evaluation\": [\n        {\n            \"aspect\": \"評価項目\",\n            \"status\": \"現状\",\n            \"suggestion\": \"改善提案\"\n        }\n    ],\n    \"priority_issues\": [\"優先的に改善すべき項目\"],\n    \"strengths\": [\"スイングの良い点\"]\n}",
 
+    "metrics_analysis_prompt": "以下の計測された指標について分析してください:\n\n{metrics}\n\n以下の点を考慮して分析してください:\n1. バットスピード：平均的な値との比較\n2. 回転の連動性：理想的な動きからのズレ\n3. 重心移動：効率的な体重移動ができているか\n4. スイング軌道：ミート力向上の観点から\n\n出力形式:\n{\n    \"metrics_evaluation\": [\n        {\n            \"metric\": \"指標名\",\n            \"evaluation\": \"評価\",\n            \"recommendation\": \"改善提案\"\n        }\n    ],\n    \"overall_assessment\": \"総合評価\"\n}"
 }
