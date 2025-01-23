@@ -5,3 +5,5 @@ MotionAGFormer/checkpoint/
 MotionAGFormer/run/output/
 MotionAGFormer/run/lib/checkpoint/
 MotionAGFormer/run/video/
+venv/
+data/

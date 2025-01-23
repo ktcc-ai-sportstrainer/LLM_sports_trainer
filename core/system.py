@@ -1,21 +1,38 @@
-# core/system.py
-
-from typing import Dict, Any
-import traceback
 from datetime import datetime
-import asyncio
+from typing import Dict, Any
 
 from langchain_openai import ChatOpenAI
-from core.state import SystemState
-from core.graph import WorkflowGraph
+from agents import (
+    InteractiveAgent,
+    ModelingAgent,
+    GoalSettingAgent,
+    PlanAgent,
+    SearchAgent,
+    SummarizeAgent
+)
+from core.executor import Executor
+from core.state import AgentState
 from core.logger import SystemLogger
 
-from agents.interactive_agent import InteractiveAgent
-from agents.modeling_agent import ModelingAgent
-from agents.goal_setting_agent import GoalSettingAgent
-from agents.plan_agent import PlanAgent
-from agents.search_agent import SearchAgent
-from agents.summarize_agent import SummarizeAgent
+class AgentState(TypedDict):
+    # 基本情報
+    persona_data: Dict[str, Any]
+    policy_data: Dict[str, Any]
+    user_video_path: str
+    ideal_video_path: str
+    
+    # エージェントの出力
+    conversation: List[Dict[str, str]]
+    motion_analysis: Dict[str, Any]
+    goals: Dict[str, Any]
+    plan: Dict[str, Any]
+    resources: Dict[str, Any]
+    summary: str
+    
+    # 実行状態
+    status: str
+    errors: List[Dict[str, Any]]
+    last_agent: str
 
 class SwingCoachingSystem:
     """野球スイングコーチングシステム全体を制御するクラス"""
@@ -23,14 +40,14 @@ class SwingCoachingSystem:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = SystemLogger()
-
+        
         # LLMの初期化
         self.llm = ChatOpenAI(
             openai_api_key=config.get("openai_api_key"),
             model=config.get("model_name", "gpt-4"),
             temperature=0.7
         )
-
+        
         # エージェントの初期化
         self.agents = {
             "interactive": InteractiveAgent(self.llm),
@@ -40,10 +57,77 @@ class SwingCoachingSystem:
             "search": SearchAgent(self.llm),
             "summary": SummarizeAgent(self.llm)
         }
+        
+        # ワークフローの初期化
+        self.workflow = self._create_workflow()
 
-        # 各エージェントのロガー設定
-        for agent_name in self.agents:
-            self.logger.setup_agent_logger(agent_name)
+    def _create_workflow(self):
+        """LangGraphベースのワークフローを構築"""
+        graph = StateGraph(AgentState)
+        
+        # エージェントノードの追加
+        for name, agent in self.agents.items():
+            graph.add_node(name, self._create_agent_handler(name, agent))
+        
+        # エッジの定義
+        graph.add_edge("interactive", "modeling")
+        graph.add_edge("modeling", "goal_setting")
+        graph.add_edge("goal_setting", "plan")
+        graph.add_edge("plan", "search")
+        graph.add_edge("search", "summary")
+        
+        # 開始・終了ポイントの設定
+        graph.set_entry_point("interactive")
+        graph.set_finish_point("summary")
+        
+        return graph.compile()
+
+    def _create_agent_handler(self, name: str, agent: Any):
+        """エージェント実行用のハンドラを生成"""
+        async def handler(state: AgentState) -> AgentState:
+            try:
+                self.logger.log_info(f"Starting {name} agent", agent=name)
+                
+                # エージェントの実行
+                result = await agent.run(state)
+                
+                # 状態の更新
+                new_state = {
+                    **state,
+                    "last_agent": name,
+                    "status": "completed"
+                }
+                
+                # エージェント固有の出力を追加
+                if name == "interactive":
+                    new_state["conversation"] = result.get("conversation", [])
+                elif name == "modeling":
+                    new_state["motion_analysis"] = result.get("motion_analysis", {})
+                elif name == "goal_setting":
+                    new_state["goals"] = result.get("goals", {})
+                elif name == "plan":
+                    new_state["plan"] = result.get("plan", {})
+                elif name == "search":
+                    new_state["resources"] = result.get("resources", {})
+                elif name == "summary":
+                    new_state["summary"] = result.get("summary", "")
+                
+                self.logger.log_info(f"Completed {name} agent", agent=name)
+                return new_state
+                
+            except Exception as e:
+                self.logger.log_error_details(error=e, agent=name)
+                return {
+                    **state,
+                    "status": "error",
+                    "errors": state.get("errors", []) + [{
+                        "agent": name,
+                        "error": str(e),
+                        "timestamp": datetime.now().isoformat()
+                    }]
+                }
+        
+        return handler
 
     async def run(
         self,
@@ -52,46 +136,37 @@ class SwingCoachingSystem:
         user_video_path: str,
         ideal_video_path: str
     ) -> Dict[str, Any]:
-        """
-        2本の動画(ユーザーのスイング / 理想スイング)を含めて
-        システムを実行し、最終結果を返す。
-        """
+        """システムを実行し、最終結果を返す"""
         try:
-            # SystemStateの初期化
-            state = SystemState(
-                persona_data=persona_data,
-                policy_data=policy_data,
-                user_video_path=user_video_path,
-                ideal_video_path=ideal_video_path
-            )
-
-            # ワークフローグラフの初期化
-            workflow = WorkflowGraph(state, self.logger)
-
-            # ワークフローの妥当性検証
-            if not workflow.validate_workflow():
-                raise ValueError("Invalid workflow configuration (circular or disconnected)")
-
-            # エージェント実行関数を準備
-            agent_executors = {
-                name: self._create_executor(agent)
-                for name, agent in self.agents.items()
+            # 初期状態の設定
+            initial_state: AgentState = {
+                "persona_data": persona_data,
+                "policy_data": policy_data,
+                "user_video_path": user_video_path,
+                "ideal_video_path": ideal_video_path,
+                "conversation": [],
+                "motion_analysis": {},
+                "goals": {},
+                "plan": {},
+                "resources": {},
+                "summary": "",
+                "status": "started",
+                "errors": [],
+                "last_agent": ""
             }
-
+            
             # ワークフローの実行
-            start_time = datetime.now()
             self.logger.log_info("Starting workflow execution")
-
-            await workflow.execute_workflow(agent_executors)
-
-            # 実行時間
+            start_time = datetime.now()
+            
+            final_state = await self.workflow.ainvoke(initial_state)
+            
             execution_time = (datetime.now() - start_time).total_seconds()
             self.logger.log_info(f"Workflow completed in {execution_time:.2f} seconds")
-
-            # 最終結果をまとめ
-            result = self._prepare_final_result(state)
-            return result
-
+            
+            # 結果の整形
+            return self._format_result(final_state)
+            
         except Exception as e:
             self.logger.log_error_details(
                 error=e,
@@ -104,54 +179,23 @@ class SwingCoachingSystem:
             )
             raise
 
-    def _create_executor(self, agent: Any):
-        """エージェント実行関数の生成"""
-        async def execute(dependencies: Dict[str, Any]) -> Dict[str, Any]:
-            agent_name = agent.__class__.__name__.lower().replace("agent", "")
-            try:
-                self.logger.log_info(f"Executing {agent_name}", agent=agent_name)
-                self.logger.log_agent_input(agent_name, dependencies)
-
-                start_time = datetime.now()
-                result = await agent.run(**dependencies)
-                execution_time = (datetime.now() - start_time).total_seconds()
-
-                self.logger.log_agent_output(agent_name, result)
-                self.logger.log_execution_time(agent_name, execution_time)
-                return result
-
-            except Exception as e:
-                self.logger.log_error_details(error=e, agent=agent_name, context=dependencies)
-                raise
-
-        return execute
-
-    def _prepare_final_result(self, state: SystemState) -> Dict[str, Any]:
-        """最終結果の辞書を作成"""
-        result = {
-            "interactive_questions": self._extract_questions(state),
-            "motion_analysis": state.motion_analysis,
-            "goal_setting": state.goals,
-            "training_plan": state.training_plan,
-            "search_results": state.search_results,
-            "final_summary": state.final_summary,
-            "execution_metrics": {
-                "completed_agents": [
-                    agent for agent in self.agents
-                    if getattr(state, f"{agent}_completed")
-                ],
-                "error_count": len(state.errors),
-                "conversation_turns": len(state.conversation_history)
+    def _format_result(self, state: AgentState) -> Dict[str, Any]:
+        """最終結果を整形"""
+        return {
+            "interactive_questions": [
+                msg["question"] for msg in state["conversation"]
+                if msg.get("role") == "assistant" and "question" in msg
+            ],
+            "motion_analysis": state["motion_analysis"],
+            "goal_setting": state["goals"],
+            "training_plan": state["plan"],
+            "search_results": state["resources"],
+            "final_summary": {
+                "summary": state["summary"],
+                "execution_metrics": {
+                    "status": state["status"],
+                    "error_count": len(state["errors"]),
+                    "last_agent": state["last_agent"]
+                }
             }
         }
-        return result
-
-    def _extract_questions(self, state: SystemState) -> List[str]:
-        """対話エージェントの質問を抽出(例)"""
-        questions = []
-        for msg in state.conversation_history:
-            # ここでは仮に "assistant" かつ "question"キーがあるものを抽出
-            if msg.get("role") == "assistant" and "question" in msg:
-                questions.append(msg["question"])
-        return questions
-
