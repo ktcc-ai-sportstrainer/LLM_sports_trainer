@@ -6,6 +6,7 @@ import os
 import asyncio
 from config.load_config import load_config
 from core.system import SwingCoachingSystem
+from utils.json_handler import JSONHandler #JSONHandlerクラスをインポート
 
 # .envファイルを明示的に読み込む
 load_dotenv(override=True)
@@ -29,39 +30,22 @@ def main():
     parser.add_argument("--user_video", type=str, required=True, help="Path to user's swing video file")
     parser.add_argument("--ideal_video", type=str, required=True, help="Path to ideal swing video file")
 
-    # 選手情報の引数
-    parser.add_argument("--age", type=int, default=20, help="Age of the player")
-    parser.add_argument("--experience", type=str, default="1年", help="Baseball experience")
-    parser.add_argument("--level", type=str, default="初心者", help="Current skill level")
-    parser.add_argument("--height", type=float, default=170.0, help="Player height in cm")
-    parser.add_argument("--weight", type=float, default=60.0, help="Player weight in kg")
-    parser.add_argument("--position", type=str, default="内野手", help="Player position")
-    parser.add_argument("--batting_style", type=str, default="右打ち", help="Batting style")
-
-    # 指導方針の引数
-    parser.add_argument("--focus_points", nargs="+", default=["重心移動", "バットコントロール"], help="List of focus points")
-    parser.add_argument("--teaching_style", type=str, default="詳細な技術指導", help="Style of teaching")
-    parser.add_argument("--goal", type=str, default="安定したコンタクト", help="High-level goal")
+    # JSONファイルパスの引数を追加
+    parser.add_argument("--json", type=str, required=True, help="Path to the JSON file containing persona and policy data")
 
     args = parser.parse_args()
 
-    # ペルソナ情報
-    persona_data = {
-        "age": args.age,
-        "experience": args.experience,
-        "level": args.level,
-        "height": args.height,
-        "weight": args.weight,
-        "position": args.position,
-        "batting_style": args.batting_style
-    }
-
-    # 指導方針情報
-    policy_data = {
-        "focus_points": args.focus_points,
-        "teaching_style": args.teaching_style,
-        "goal": args.goal
-    }
+    # JSONファイルからデータの読み込み
+    try:
+        input_data = JSONHandler.load_json(args.json)
+        persona_data = input_data.get("basic_info", {})
+        policy_data = input_data.get("coaching_policy", {})
+    except FileNotFoundError:
+        print(f"Error: JSON file not found at {args.json}")
+        return
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON format in {args.json}")
+        return
 
     # コンフィグ読み込みとシステム初期化
     config = load_config()
@@ -71,8 +55,8 @@ def main():
     loop = asyncio.get_event_loop()
     result = loop.run_until_complete(
         system.run(
-            persona_data,
-            policy_data,
+            persona_data=persona_data,
+            policy_data=policy_data,
             user_video_path=args.user_video,
             ideal_video_path=args.ideal_video
         )
