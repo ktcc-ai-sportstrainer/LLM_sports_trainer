@@ -4,12 +4,14 @@ from typing import Dict, List, Any, Optional, Tuple, TypeVar
 
 from langchain_openai import ChatOpenAI
 from models.output.agent_output import AgentOutput
+from core.logger import SystemLogger
 
 
 class BaseAgent(ABC):
     def __init__(self, llm: ChatOpenAI):
         self.llm = llm
         self.agent_name = self.__class__.__name__
+        self.logger = SystemLogger()
 
     @abstractmethod
     async def run(self, *args, **kwargs) -> Dict[str, Any]:

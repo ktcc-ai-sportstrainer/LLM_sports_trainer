@@ -11,8 +11,10 @@ from agents import (
     SearchAgent,
     SummarizeAgent
 )
-from core.state import AgentState
+from core.state import AgentState, create_initial_state
 from core.logger import SystemLogger
+from models.input.persona import Persona
+from models.input.policy import TeachingPolicy
 
 class SwingCoachingSystem:
     """野球スイングコーチングシステム全体を制御するクラス"""
@@ -21,7 +23,7 @@ class SwingCoachingSystem:
         self.config = config
         self.logger = SystemLogger()
         
-        # OpenAI APIキーの取得（環境変数から）
+        # OpenAI APIキーの取得と検証
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
@@ -50,21 +52,21 @@ class SwingCoachingSystem:
         """LangGraphベースのワークフローを構築"""
         graph = StateGraph(AgentState)
         
-        # エージェントノードの追加（ユニークな名前を使用）
+        # エージェントノードの追加（ノード名に '_node' を付加して重複を避ける）
         for name, agent in self.agents.items():
-            node_name = f"{name}_agent"  # ユニークな名前を生成
+            node_name = f"{name}_node"  # 状態キーと重複しないようにするため
             graph.add_node(node_name, self._create_agent_handler(name, agent))
         
         # エッジの定義（ノード名を更新）
-        graph.add_edge("interactive_agent", "modeling_agent")
-        graph.add_edge("modeling_agent", "goal_setting_agent")
-        graph.add_edge("goal_setting_agent", "plan_agent")
-        graph.add_edge("plan_agent", "search_agent")
-        graph.add_edge("search_agent", "summary_agent")
+        graph.add_edge("interactive_node", "modeling_node")
+        graph.add_edge("modeling_node", "goal_setting_node")
+        graph.add_edge("goal_setting_node", "plan_node")
+        graph.add_edge("plan_node", "search_node")
+        graph.add_edge("search_node", "summary_node")
         
         # 開始・終了ポイントの設定（ノード名を更新）
-        graph.set_entry_point("interactive_agent")
-        graph.set_finish_point("summary_agent")
+        graph.set_entry_point("interactive_node")
+        graph.set_finish_point("summary_node")
         
         return graph.compile()
 
@@ -78,8 +80,8 @@ class SwingCoachingSystem:
                 result = None
                 if name == "interactive":
                     result = await agent.run(
-                        persona=state["persona_data"],
-                        policy=state["policy_data"],
+                        persona=Persona(**state["persona_data"]),
+                        policy=TeachingPolicy(**state["policy_data"]),
                         conversation_history=state.get("conversation", [])
                     )
                 elif name == "modeling":
@@ -89,8 +91,8 @@ class SwingCoachingSystem:
                     )
                 elif name == "goal_setting":
                     result = await agent.run(
-                        persona=state["persona_data"],
-                        policy=state["policy_data"],
+                        persona=Persona(**state["persona_data"]),
+                        policy=TeachingPolicy(**state["policy_data"]),
                         conversation_insights=state.get("conversation_insights", []),
                         motion_analysis=state.get("motion_analysis", {})
                     )
@@ -120,7 +122,13 @@ class SwingCoachingSystem:
 
                 # エージェント固有の出力を追加
                 if result:
-                    result_dict = result if isinstance(result, dict) else (result.dict() if hasattr(result, 'dict') else {})
+                    # dictの場合とPydanticモデルの場合の両方に対応
+                    result_dict = (
+                        result if isinstance(result, dict)
+                        else result.dict() if hasattr(result, 'dict')
+                        else {}
+                    )
+                    
                     if name == "interactive":
                         new_state["conversation"] = result_dict.get("conversation", [])
                         new_state["conversation_insights"] = result_dict.get("insights", [])
@@ -133,7 +141,15 @@ class SwingCoachingSystem:
                     elif name == "search":
                         new_state["resources"] = result_dict
                     elif name == "summary":
-                        new_state["summary"] = result_dict
+                        new_state["summary"] = result_dict.get("summary", "")
+
+                # エラーがない場合は実行メトリクスを更新
+                if not state.get("errors"):
+                    execution_time = (datetime.now() - state.get("start_time", datetime.now())).total_seconds()
+                    new_state["execution_metrics"] = {
+                        "agent": name,
+                        "execution_time": execution_time
+                    }
 
                 return new_state
 
@@ -160,33 +176,31 @@ class SwingCoachingSystem:
     ) -> Dict[str, Any]:
         """システムを実行し、最終結果を返す"""
         try:
-            # 初期状態の設定
-            initial_state: AgentState = {
-                "persona_data": persona_data,
-                "policy_data": policy_data,
-                "user_video_path": user_video_path,
-                "ideal_video_path": ideal_video_path,
-                "conversation": [],
-                "motion_analysis": {},
-                "goals": {},
-                "plan": {},
-                "resources": {},
-                "summary": "",
-                "status": "started",
-                "errors": [],
-                "last_agent": ""
-            }
+            # ビデオファイルの存在確認
+            for video_path in [user_video_path, ideal_video_path]:
+                if not os.path.exists(video_path):
+                    raise FileNotFoundError(f"Video file not found: {video_path}")
+
+            # 初期状態の作成
+            initial_state = create_initial_state(
+                persona_data=persona_data,
+                policy_data=policy_data,
+                user_video_path=user_video_path,
+                ideal_video_path=ideal_video_path
+            )
+            
+            # 実行開始時刻の記録
+            initial_state["start_time"] = datetime.now()
             
             # ワークフローの実行
             self.logger.log_info("Starting workflow execution")
-            start_time = datetime.now()
-            
             final_state = await self.workflow.ainvoke(initial_state)
             
-            execution_time = (datetime.now() - start_time).total_seconds()
+            # 実行時間の計算と記録
+            execution_time = (datetime.now() - initial_state["start_time"]).total_seconds()
             self.logger.log_info(f"Workflow completed in {execution_time:.2f} seconds")
             
-            # 結果の整形
+            # 結果の整形と返却
             return self._format_result(final_state)
             
         except Exception as e:
@@ -215,9 +229,12 @@ class SwingCoachingSystem:
             "final_summary": {
                 "summary": state.get("summary", ""),
                 "execution_metrics": {
-                    "status": state["status"],
+                    "status": state.get("status", "unknown"),
                     "error_count": len(state.get("errors", [])),
-                    "last_agent": state["last_agent"]
+                    "last_agent": state.get("last_agent", ""),
+                    "total_time": (
+                        datetime.now() - state["start_time"]
+                    ).total_seconds() if "start_time" in state else 0
                 }
             }
         }
