@@ -1,5 +1,5 @@
+from typing import Dict, List, Any, Optional, Tuple, TypeVar
 from pydantic import BaseModel, Field
-from typing import Dict, Any, Optional
 from datetime import datetime
 
 class AgentMetrics(BaseModel):

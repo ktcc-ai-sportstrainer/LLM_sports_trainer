@@ -1,4 +1,4 @@
-from typing import TypedDict, Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TypedDict
 from datetime import datetime
 from pydantic import BaseModel
 

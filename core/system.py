@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Dict, Any
-
+from typing import Dict, Any, List, Optional, TypedDict 
+import os
 from langchain_openai import ChatOpenAI
 from agents import (
     InteractiveAgent,
@@ -41,9 +41,14 @@ class SwingCoachingSystem:
         self.config = config
         self.logger = SystemLogger()
         
+        # OpenAI APIキーの取得（環境変数から）
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        
         # LLMの初期化
         self.llm = ChatOpenAI(
-            openai_api_key=config.get("openai_api_key"),
+            openai_api_key=openai_api_key,
             model=config.get("model_name", "gpt-4"),
             temperature=0.7
         )

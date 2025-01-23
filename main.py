@@ -1,11 +1,12 @@
-# main.py
-
+from dotenv import load_dotenv
 import argparse
 import json
 import os
 import asyncio
 from config.load_config import load_config
 from core.system import SwingCoachingSystem
+
+load_dotenv()
 
 def main():
     parser = argparse.ArgumentParser(description="Swing Coaching System CLI")

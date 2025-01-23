@@ -6,6 +6,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from matplotlib.animation import FuncAnimation
 import matplotlib.path as mpath
 
+
 # JSONファイルの読み込み
 with open('input.json', 'r') as f:
     data = json.load(f)
