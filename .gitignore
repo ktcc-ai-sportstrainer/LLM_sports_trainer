@@ -7,3 +7,4 @@ MotionAGFormer/run/lib/checkpoint/
 MotionAGFormer/run/video/
 venv/
 data/
+log/
