@@ -23,32 +23,37 @@ class PlanAgent(BaseAgent):
         self.task_prompt = ChatPromptTemplate.from_template(prompts["task_prompt"])
         self.progression_prompt = ChatPromptTemplate.from_template(prompts["progression_prompt"])
 
-    async def run(
-        self,
-        goal: Goal,
-        issues: List[str]
-    ) -> Dict[str, Any]:
-        """練習計画の生成"""
-        # 1. 全体計画の生成
-        overall_plan = await self._generate_overall_plan(goal, issues)
-        
-        # 2. 具体的なタスクの生成
-        tasks = await self._generate_tasks(overall_plan, goal)
-        
-        # 3. 進行計画の生成
-        progression_path = await self._generate_progression_path(tasks, goal)
-        
-        # 4. TrainingPlan オブジェクトの生成
-        training_plan = TrainingPlan(
-            tasks=tasks,
-            progression_path=progression_path,
-            required_time=self._calculate_total_time(tasks)
-        )
-        
-        return self.create_output(
-            output_type="training_plan",
-            content=training_plan.dict()
-        ).dict()
+    async def run(self, goal: Dict[str, Any], issues: List[str]) -> Dict[str, Any]:
+        try:
+            # 辞書からGoalオブジェクトを作成
+            goal_obj = Goal(
+                primary_goal=goal.get("primary_goal", ""),
+                sub_goals=goal.get("sub_goals", []),
+                metrics=goal.get("metrics", []),
+                timeframe=goal.get("timeframe", "")
+            )
+            
+            # 1. 全体計画の生成
+            overall_plan = await self._generate_overall_plan(goal_obj, issues)
+            
+            # 2. 具体的なタスクの生成
+            tasks = await self._generate_tasks(overall_plan, goal_obj)
+            
+            # 3. 進行計画の生成
+            progression_path = await self._generate_progression_path(tasks, goal_obj)
+            
+            # 4. TrainingPlan オブジェクトの生成
+            training_plan = TrainingPlan(
+                tasks=tasks,
+                progression_path=progression_path,
+                required_time=self._calculate_total_time(tasks)
+            )
+            
+            return training_plan.dict()
+            
+        except Exception as e:
+            self.logger.log_error(f"Error in PlanAgent: {str(e)}")
+            return {}
 
     async def _generate_overall_plan(
         self,
@@ -65,8 +70,7 @@ class PlanAgent(BaseAgent):
             )
         )
         
-        plan_dict = json.loads(response.content)
-        return plan_dict
+        return json.loads(response.content)
 
     async def _generate_tasks(
         self,
@@ -75,7 +79,7 @@ class PlanAgent(BaseAgent):
     ) -> List[TrainingTask]:
         """具体的な練習タスクの生成"""
         tasks = []
-        for area in overall_plan["training_areas"]:
+        for area in overall_plan.get("training_areas", []):
             response = await self.llm.ainvoke(
                 self.task_prompt.format(
                     training_area=area,
@@ -89,7 +93,7 @@ class PlanAgent(BaseAgent):
                 description=task_dict["description"],
                 duration=task_dict["duration"],
                 focus_points=task_dict["focus_points"],
-                equipment=task_dict["equipment"]
+                equipment=task_dict.get("equipment", [])
             )
             tasks.append(task)
         
@@ -103,19 +107,17 @@ class PlanAgent(BaseAgent):
         """段階的な上達計画の生成"""
         response = await self.llm.ainvoke(
             self.progression_prompt.format(
-                tasks=json.dumps([t.dict() for t in tasks], ensure_ascii=False),
+                tasks=[t.dict() for t in tasks],
                 goal=goal.dict()
             )
         )
         
-        path_dict = json.loads(response.content)
-        return path_dict["progression_path"]
+        return json.loads(response.content)["progression_path"]
 
     def _calculate_total_time(self, tasks: List[TrainingTask]) -> str:
         """全タスクの所要時間を計算"""
         total_minutes = 0
         for task in tasks:
-            # 時間文字列（例：「30分」）から数値を抽出
             time_str = task.duration
             try:
                 minutes = int(''.join(filter(str.isdigit, time_str)))
@@ -123,7 +125,6 @@ class PlanAgent(BaseAgent):
             except ValueError:
                 continue
         
-        # 時間と分に変換
         hours = total_minutes // 60
         minutes = total_minutes % 60
         

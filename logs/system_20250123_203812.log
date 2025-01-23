@@ -1,0 +1,43 @@
+2025-01-23 20:38:12,722 - SwingCoachSystem - INFO - Starting workflow execution
+2025-01-23 20:38:12,725 - SwingCoachSystem - INFO - Starting interactive agent
+2025-01-23 20:38:12,725 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:38:12.725560",
+  "context": {}
+}
+2025-01-23 20:38:12,726 - SwingCoachSystem - INFO - Starting modeling agent
+2025-01-23 20:38:12,726 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "NameError",
+  "error_message": "name 'sys' is not defined",
+  "timestamp": "2025-01-23T20:38:12.726763",
+  "context": {}
+}
+2025-01-23 20:38:12,727 - SwingCoachSystem - INFO - Starting goal_setting agent
+2025-01-23 20:38:12,727 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:38:12.727892",
+  "context": {}
+}
+2025-01-23 20:38:12,728 - SwingCoachSystem - INFO - Starting plan agent
+2025-01-23 20:38:12,729 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'primary_goal'",
+  "timestamp": "2025-01-23T20:38:12.728993",
+  "context": {}
+}
+2025-01-23 20:38:12,729 - SwingCoachSystem - INFO - Starting search agent
+2025-01-23 20:38:12,730 - SwingCoachSystem - INFO - Starting summary agent
+2025-01-23 20:38:12,731 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "KeyError",
+  "error_message": "'\\n    \"技術分析\"'",
+  "timestamp": "2025-01-23T20:38:12.731302",
+  "context": {}
+}
+2025-01-23 20:38:12,732 - SwingCoachSystem - INFO - Workflow completed in 0.01 seconds

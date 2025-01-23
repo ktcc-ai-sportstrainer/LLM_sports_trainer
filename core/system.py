@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, TypedDict 
 import os
 from langchain_openai import ChatOpenAI
+from langgraph.graph import StateGraph
 from agents import (
     InteractiveAgent,
     ModelingAgent,
@@ -10,29 +11,8 @@ from agents import (
     SearchAgent,
     SummarizeAgent
 )
-from core.executor import Executor
 from core.state import AgentState
 from core.logger import SystemLogger
-
-class AgentState(TypedDict):
-    # 基本情報
-    persona_data: Dict[str, Any]
-    policy_data: Dict[str, Any]
-    user_video_path: str
-    ideal_video_path: str
-    
-    # エージェントの出力
-    conversation: List[Dict[str, str]]
-    motion_analysis: Dict[str, Any]
-    goals: Dict[str, Any]
-    plan: Dict[str, Any]
-    resources: Dict[str, Any]
-    summary: str
-    
-    # 実行状態
-    status: str
-    errors: List[Dict[str, Any]]
-    last_agent: str
 
 class SwingCoachingSystem:
     """野球スイングコーチングシステム全体を制御するクラス"""
@@ -70,20 +50,21 @@ class SwingCoachingSystem:
         """LangGraphベースのワークフローを構築"""
         graph = StateGraph(AgentState)
         
-        # エージェントノードの追加
+        # エージェントノードの追加（ユニークな名前を使用）
         for name, agent in self.agents.items():
-            graph.add_node(name, self._create_agent_handler(name, agent))
+            node_name = f"{name}_agent"  # ユニークな名前を生成
+            graph.add_node(node_name, self._create_agent_handler(name, agent))
         
-        # エッジの定義
-        graph.add_edge("interactive", "modeling")
-        graph.add_edge("modeling", "goal_setting")
-        graph.add_edge("goal_setting", "plan")
-        graph.add_edge("plan", "search")
-        graph.add_edge("search", "summary")
+        # エッジの定義（ノード名を更新）
+        graph.add_edge("interactive_agent", "modeling_agent")
+        graph.add_edge("modeling_agent", "goal_setting_agent")
+        graph.add_edge("goal_setting_agent", "plan_agent")
+        graph.add_edge("plan_agent", "search_agent")
+        graph.add_edge("search_agent", "summary_agent")
         
-        # 開始・終了ポイントの設定
-        graph.set_entry_point("interactive")
-        graph.set_finish_point("summary")
+        # 開始・終了ポイントの設定（ノード名を更新）
+        graph.set_entry_point("interactive_agent")
+        graph.set_finish_point("summary_agent")
         
         return graph.compile()
 
@@ -93,33 +74,69 @@ class SwingCoachingSystem:
             try:
                 self.logger.log_info(f"Starting {name} agent", agent=name)
                 
-                # エージェントの実行
-                result = await agent.run(state)
-                
+                # エージェントごとに必要な引数を準備
+                result = None
+                if name == "interactive":
+                    result = await agent.run(
+                        persona=state["persona_data"],
+                        policy=state["policy_data"],
+                        conversation_history=state.get("conversation", [])
+                    )
+                elif name == "modeling":
+                    result = await agent.run(
+                        user_video_path=state["user_video_path"],
+                        ideal_video_path=state["ideal_video_path"]
+                    )
+                elif name == "goal_setting":
+                    result = await agent.run(
+                        persona=state["persona_data"],
+                        policy=state["policy_data"],
+                        conversation_insights=state.get("conversation_insights", []),
+                        motion_analysis=state.get("motion_analysis", {})
+                    )
+                elif name == "plan":
+                    result = await agent.run(
+                        goal=state.get("goals", {}),
+                        issues=state.get("motion_analysis", {}).get("issues_found", [])
+                    )
+                elif name == "search":
+                    result = await agent.run(
+                        tasks=state.get("plan", {}).get("tasks", []),
+                        player_level=state["persona_data"]["level"]
+                    )
+                elif name == "summary":
+                    result = await agent.run(
+                        analysis=state.get("motion_analysis", {}),
+                        goal=state.get("goals", {}),
+                        plan=state.get("plan", {})
+                    )
+
                 # 状態の更新
                 new_state = {
                     **state,
                     "last_agent": name,
                     "status": "completed"
                 }
-                
+
                 # エージェント固有の出力を追加
-                if name == "interactive":
-                    new_state["conversation"] = result.get("conversation", [])
-                elif name == "modeling":
-                    new_state["motion_analysis"] = result.get("motion_analysis", {})
-                elif name == "goal_setting":
-                    new_state["goals"] = result.get("goals", {})
-                elif name == "plan":
-                    new_state["plan"] = result.get("plan", {})
-                elif name == "search":
-                    new_state["resources"] = result.get("resources", {})
-                elif name == "summary":
-                    new_state["summary"] = result.get("summary", "")
-                
-                self.logger.log_info(f"Completed {name} agent", agent=name)
+                if result:
+                    result_dict = result if isinstance(result, dict) else (result.dict() if hasattr(result, 'dict') else {})
+                    if name == "interactive":
+                        new_state["conversation"] = result_dict.get("conversation", [])
+                        new_state["conversation_insights"] = result_dict.get("insights", [])
+                    elif name == "modeling":
+                        new_state["motion_analysis"] = result_dict
+                    elif name == "goal_setting":
+                        new_state["goals"] = result_dict
+                    elif name == "plan":
+                        new_state["plan"] = result_dict
+                    elif name == "search":
+                        new_state["resources"] = result_dict
+                    elif name == "summary":
+                        new_state["summary"] = result_dict
+
                 return new_state
-                
+
             except Exception as e:
                 self.logger.log_error_details(error=e, agent=name)
                 return {
@@ -188,18 +205,18 @@ class SwingCoachingSystem:
         """最終結果を整形"""
         return {
             "interactive_questions": [
-                msg["question"] for msg in state["conversation"]
+                msg["question"] for msg in state.get("conversation", [])
                 if msg.get("role") == "assistant" and "question" in msg
             ],
-            "motion_analysis": state["motion_analysis"],
-            "goal_setting": state["goals"],
-            "training_plan": state["plan"],
-            "search_results": state["resources"],
+            "motion_analysis": state.get("motion_analysis", {}),
+            "goal_setting": state.get("goals", {}),
+            "training_plan": state.get("plan", {}),
+            "search_results": state.get("resources", {}),
             "final_summary": {
-                "summary": state["summary"],
+                "summary": state.get("summary", ""),
                 "execution_metrics": {
                     "status": state["status"],
-                    "error_count": len(state["errors"]),
+                    "error_count": len(state.get("errors", [])),
                     "last_agent": state["last_agent"]
                 }
             }

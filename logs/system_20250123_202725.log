@@ -1,0 +1,44 @@
+2025-01-23 20:27:25,677 - SwingCoachSystem - INFO - Starting workflow execution
+2025-01-23 20:27:25,680 - SwingCoachSystem - INFO - Starting interactive agent
+2025-01-23 20:27:25,680 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:27:25.680390",
+  "context": {}
+}
+2025-01-23 20:27:25,681 - SwingCoachSystem - INFO - Starting modeling agent
+2025-01-23 20:27:25,682 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "FileNotFoundError",
+  "error_message": "[Errno 2] No such file or directory: 'python'",
+  "timestamp": "2025-01-23T20:27:25.682446",
+  "context": {}
+}
+2025-01-23 20:27:25,683 - SwingCoachSystem - INFO - Starting goal_setting agent
+2025-01-23 20:27:25,683 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:27:25.683695",
+  "context": {}
+}
+2025-01-23 20:27:25,684 - SwingCoachSystem - INFO - Starting plan agent
+2025-01-23 20:27:25,684 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'primary_goal'",
+  "timestamp": "2025-01-23T20:27:25.684748",
+  "context": {}
+}
+2025-01-23 20:27:25,685 - SwingCoachSystem - INFO - Starting search agent
+2025-01-23 20:27:25,685 - SwingCoachSystem - INFO - Completed search agent
+2025-01-23 20:27:25,686 - SwingCoachSystem - INFO - Starting summary agent
+2025-01-23 20:27:25,686 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "KeyError",
+  "error_message": "'\\n    \"技術分析\"'",
+  "timestamp": "2025-01-23T20:27:25.686933",
+  "context": {}
+}
+2025-01-23 20:27:25,687 - SwingCoachSystem - INFO - Workflow completed in 0.01 seconds

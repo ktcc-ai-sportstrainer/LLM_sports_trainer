@@ -1,14 +1,12 @@
 from typing import Any, Dict, List
 import json
 import os
+from langchain_community.agent_toolkits.load_tools import load_tools
+from langchain.agents import initialize_agent
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
-from langchain.tools import Tool
-from langchain_community.utilities import GoogleSearchAPIWrapper
 
 from agents.base import BaseAgent
-from models.internal.goal import Goal
-from models.internal.plan import TrainingTask
 
 class SearchAgent(BaseAgent):
     """練習タスクに関連する具体的な練習メニューや指導のポイントを検索して提案するエージェント"""
@@ -21,16 +19,19 @@ class SearchAgent(BaseAgent):
         with open(prompt_path, "r", encoding="utf-8") as f:
             prompts = json.load(f)
             
-        self.search_prompt = ChatPromptTemplate.from_template(prompts["search_prompt"])
         self.synthesis_prompt = ChatPromptTemplate.from_template(prompts["synthesis_prompt"])
         self.drill_prompt = ChatPromptTemplate.from_template(prompts["drill_prompt"])
 
-        # 検索ツールの設定
-        self.search = GoogleSearchAPIWrapper()
-        self.search_tool = Tool(
-            name="Google Search",
-            description="Search Google for recent information about baseball training drills",
-            func=self.search.run
+        # Googleサーチツールの準備
+        self.tool_names = ["google-search"]
+        self.tools = load_tools(self.tool_names, llm=self.llm)
+        
+        # エージェントの初期化
+        self.agent = initialize_agent(
+            self.tools, 
+            self.llm, 
+            agent="zero-shot-react-description", 
+            verbose=True
         )
 
     async def run(
@@ -42,65 +43,45 @@ class SearchAgent(BaseAgent):
         detailed_tasks = []
         
         for task in tasks:
-            # 1. 関連情報の検索
-            search_results = await self._search_relevant_info(task, player_level)
+            # 検索クエリの生成
+            query = f"野球 バッティング 練習方法 {task['title']} {player_level}"
             
-            # 2. 検索結果の統合
-            synthesized_info = await self._synthesize_info(search_results, task)
-            
-            # 3. 具体的な練習メニューの生成
-            training_menu = await self._generate_training_menu(
-                task, synthesized_info, player_level
-            )
-            
-            detailed_task = {
-                **task,
-                "training_menu": training_menu
-            }
-            detailed_tasks.append(detailed_task)
+            try:
+                # 関連情報の検索
+                search_results = await self.agent.ainvoke(query)
+                
+                # 検索結果の統合
+                synthesized_info = await self._synthesize_info(search_results, task)
+                
+                # 具体的な練習メニューの生成
+                training_menu = await self._generate_training_menu(
+                    task, synthesized_info, player_level
+                )
+                
+                detailed_task = {
+                    **task,
+                    "training_menu": training_menu
+                }
+                detailed_tasks.append(detailed_task)
+                
+            except Exception as e:
+                print(f"Search error for task '{task['title']}': {str(e)}")
+                continue
         
         return self.create_output(
             output_type="detailed_training_tasks",
             content={"tasks": detailed_tasks}
         ).dict()
 
-    async def _search_relevant_info(
-        self,
-        task: Dict[str, Any],
-        player_level: str
-    ) -> List[str]:
-        """タスクに関連する情報を検索"""
-        # 検索クエリの生成
-        response = await self.llm.ainvoke(
-            self.search_prompt.format(
-                task=json.dumps(task, ensure_ascii=False),
-                player_level=player_level
-            )
-        )
-        
-        search_queries = json.loads(response.content)["queries"]
-        
-        # 各クエリで検索を実行
-        all_results = []
-        for query in search_queries:
-            try:
-                results = await self.search_tool.arun(query)
-                all_results.append(results)
-            except Exception as e:
-                print(f"Search error for query '{query}': {str(e)}")
-                continue
-        
-        return all_results
-
     async def _synthesize_info(
         self,
-        search_results: List[str],
+        search_results: str,
         task: Dict[str, Any]
     ) -> Dict[str, Any]:
         """検索結果を統合して構造化"""
         response = await self.llm.ainvoke(
             self.synthesis_prompt.format(
-                search_results="\n".join(search_results),
+                search_results=search_results,
                 task=json.dumps(task, ensure_ascii=False)
             )
         )

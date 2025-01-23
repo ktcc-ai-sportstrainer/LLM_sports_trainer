@@ -1,0 +1,43 @@
+2025-01-23 20:48:13,690 - SwingCoachSystem - INFO - Starting workflow execution
+2025-01-23 20:48:13,695 - SwingCoachSystem - INFO - Starting interactive agent
+2025-01-23 20:48:13,695 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:48:13.695280",
+  "context": {}
+}
+2025-01-23 20:48:13,696 - SwingCoachSystem - INFO - Starting modeling agent
+2025-01-23 20:48:34,345 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "CalledProcessError",
+  "error_message": "Command '['/usr/bin/python3', '/home/ubuntu/LLM_sports_trainer/MotionAGFormer/run/vis.py', '--video', 'st2.mp4', '--output', 'output/user_swing']' returned non-zero exit status 1.",
+  "timestamp": "2025-01-23T20:48:34.345396",
+  "context": {}
+}
+2025-01-23 20:48:34,349 - SwingCoachSystem - INFO - Starting goal_setting agent
+2025-01-23 20:48:34,349 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'dict' object has no attribute 'dict'",
+  "timestamp": "2025-01-23T20:48:34.349503",
+  "context": {}
+}
+2025-01-23 20:48:34,351 - SwingCoachSystem - INFO - Starting plan agent
+2025-01-23 20:48:34,351 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "AttributeError",
+  "error_message": "'PlanAgent' object has no attribute 'logger'",
+  "timestamp": "2025-01-23T20:48:34.351514",
+  "context": {}
+}
+2025-01-23 20:48:34,353 - SwingCoachSystem - INFO - Starting search agent
+2025-01-23 20:48:34,354 - SwingCoachSystem - INFO - Starting summary agent
+2025-01-23 20:48:34,355 - SwingCoachSystem - ERROR - Error details:
+{
+  "error_type": "KeyError",
+  "error_message": "'\\n    \"技術分析\"'",
+  "timestamp": "2025-01-23T20:48:34.355729",
+  "context": {}
+}
+2025-01-23 20:48:34,357 - SwingCoachSystem - INFO - Workflow completed in 20.67 seconds
