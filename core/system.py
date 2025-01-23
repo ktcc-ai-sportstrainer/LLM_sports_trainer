@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Dict, Any, List, Optional, TypedDict 
+from typing import Dict, Any, List, Optional, TypedDict
 import os
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph
@@ -22,19 +22,19 @@ class SwingCoachingSystem:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = SystemLogger()
-        
+
         # OpenAI APIキーの取得と検証
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
-        
+
         # LLMの初期化
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
             model=config.get("model_name", "gpt-4"),
             temperature=0.7
         )
-        
+
         # エージェントの初期化
         self.agents = {
             "interactive": InteractiveAgent(self.llm),
@@ -44,74 +44,35 @@ class SwingCoachingSystem:
             "search": SearchAgent(self.llm),
             "summary": SummarizeAgent(self.llm)
         }
-        
-        # ワークフローの初期化
-        self.workflow = self._create_workflow()
 
-    def _create_workflow(self):
-        """LangGraphベースのワークフローを構築"""
-        graph = StateGraph(AgentState)
-        
-        # エージェントノードの追加（ノード名に '_node' を付加して重複を避ける）
+        # ワークフローの構築 (コンストラクタ内で直接定義)
+        self.workflow = StateGraph(AgentState)
         for name, agent in self.agents.items():
-            node_name = f"{name}_node"  # 状態キーと重複しないようにするため
-            graph.add_node(node_name, self._create_agent_handler(name, agent))
-        
-        # エッジの定義（ノード名を更新）
-        graph.add_edge("interactive_node", "modeling_node")
-        graph.add_edge("modeling_node", "goal_setting_node")
-        graph.add_edge("goal_setting_node", "plan_node")
-        graph.add_edge("plan_node", "search_node")
-        graph.add_edge("search_node", "summary_node")
-        
-        # 開始・終了ポイントの設定（ノード名を更新）
-        graph.set_entry_point("interactive_node")
-        graph.set_finish_point("summary_node")
-        
-        return graph.compile()
+            node_name = f"{name}_node"
+            self.workflow.add_node(node_name, self._create_agent_handler(name, agent))
+        self.workflow.add_edge("interactive_node", "modeling_node")
+        self.workflow.add_edge("modeling_node", "goal_setting_node")
+        self.workflow.add_edge("goal_setting_node", "plan_node")
+        self.workflow.add_edge("plan_node", "search_node")
+        self.workflow.add_edge("search_node", "summary_node")
+        self.workflow.set_entry_point("interactive_node")
+        self.workflow.set_finish_point("summary_node")
+        self.workflow = self.workflow.compile()
 
     def _create_agent_handler(self, name: str, agent: Any):
         """エージェント実行用のハンドラを生成"""
         async def handler(state: AgentState) -> AgentState:
             try:
                 self.logger.log_info(f"Starting {name} agent", agent=name)
-                
-                # エージェントごとに必要な引数を準備
-                result = None
-                if name == "interactive":
-                    result = await agent.run(
-                        persona=Persona(**state["persona_data"]),
-                        policy=TeachingPolicy(**state["policy_data"]),
-                        conversation_history=state.get("conversation", [])
-                    )
-                elif name == "modeling":
-                    result = await agent.run(
-                        user_video_path=state["user_video_path"],
-                        ideal_video_path=state["ideal_video_path"]
-                    )
-                elif name == "goal_setting":
-                    result = await agent.run(
-                        persona=Persona(**state["persona_data"]),
-                        policy=TeachingPolicy(**state["policy_data"]),
-                        conversation_insights=state.get("conversation_insights", []),
-                        motion_analysis=state.get("motion_analysis", {})
-                    )
-                elif name == "plan":
-                    result = await agent.run(
-                        goal=state.get("goals", {}),
-                        issues=state.get("motion_analysis", {}).get("issues_found", [])
-                    )
-                elif name == "search":
-                    result = await agent.run(
-                        tasks=state.get("plan", {}).get("tasks", []),
-                        player_level=state["persona_data"]["level"]
-                    )
-                elif name == "summary":
-                    result = await agent.run(
-                        analysis=state.get("motion_analysis", {}),
-                        goal=state.get("goals", {}),
-                        plan=state.get("plan", {})
-                    )
+
+                # エージェントの入力を準備
+                input_data = self._prepare_agent_input(name, state)
+
+                # エージェントの実行
+                start_time = datetime.now()
+                result = await agent.run(**input_data)
+                execution_time = (datetime.now() - start_time).total_seconds()
+                self.logger.log_info(f"Agent {name} completed in {execution_time:.2f} seconds", agent=name)
 
                 # 状態の更新
                 new_state = {
@@ -119,37 +80,8 @@ class SwingCoachingSystem:
                     "last_agent": name,
                     "status": "completed"
                 }
-
-                # エージェント固有の出力を追加
                 if result:
-                    # dictの場合とPydanticモデルの場合の両方に対応
-                    result_dict = (
-                        result if isinstance(result, dict)
-                        else result.dict() if hasattr(result, 'dict')
-                        else {}
-                    )
-                    
-                    if name == "interactive":
-                        new_state["conversation"] = result_dict.get("conversation", [])
-                        new_state["conversation_insights"] = result_dict.get("insights", [])
-                    elif name == "modeling":
-                        new_state["motion_analysis"] = result_dict
-                    elif name == "goal_setting":
-                        new_state["goals"] = result_dict
-                    elif name == "plan":
-                        new_state["plan"] = result_dict
-                    elif name == "search":
-                        new_state["resources"] = result_dict
-                    elif name == "summary":
-                        new_state["summary"] = result_dict.get("summary", "")
-
-                # エラーがない場合は実行メトリクスを更新
-                if not state.get("errors"):
-                    execution_time = (datetime.now() - state.get("start_time", datetime.now())).total_seconds()
-                    new_state["execution_metrics"] = {
-                        "agent": name,
-                        "execution_time": execution_time
-                    }
+                    new_state.update(result)
 
                 return new_state
 
@@ -164,8 +96,47 @@ class SwingCoachingSystem:
                         "timestamp": datetime.now().isoformat()
                     }]
                 }
-        
+
         return handler
+
+    def _prepare_agent_input(self, agent_name: str, state: AgentState) -> Dict[str, Any]:
+        """エージェント実行のために必要な入力データを準備"""
+        if agent_name == "interactive":
+            return {
+                "persona": Persona(**state["persona_data"]),
+                "policy": TeachingPolicy(**state["policy_data"]),
+                "conversation_history": state.get("conversation", [])
+            }
+        elif agent_name == "modeling":
+            return {
+                "user_video_path": state["user_video_path"],
+                "ideal_video_path": state["ideal_video_path"]
+            }
+        elif agent_name == "goal_setting":
+            return {
+                "persona": Persona(**state["persona_data"]),
+                "policy": TeachingPolicy(**state["policy_data"]),
+                "conversation_insights": state.get("conversation", []),
+                "motion_analysis": state.get("motion_analysis", {})
+            }
+        elif agent_name == "plan":
+            return {
+                "goal": state.get("goals", {}),
+                "issues": state.get("motion_analysis", {}).get("user_analysis", {}).get("issues", [])
+            }
+        elif agent_name == "search":
+            return {
+                "tasks": state.get("plan", {}).get("tasks", []),
+                "player_level": state["persona_data"]["level"]
+            }
+        elif agent_name == "summary":
+            return {
+                "analysis": state.get("motion_analysis", {}),
+                "goal": state.get("goals", {}),
+                "plan": state.get("plan", {})
+            }
+        else:
+            raise ValueError(f"Unknown agent: {agent_name}")
 
     async def run(
         self,
@@ -188,21 +159,21 @@ class SwingCoachingSystem:
                 user_video_path=user_video_path,
                 ideal_video_path=ideal_video_path
             )
-            
+
             # 実行開始時刻の記録
             initial_state["start_time"] = datetime.now()
-            
+
             # ワークフローの実行
             self.logger.log_info("Starting workflow execution")
             final_state = await self.workflow.ainvoke(initial_state)
-            
+
             # 実行時間の計算と記録
             execution_time = (datetime.now() - initial_state["start_time"]).total_seconds()
             self.logger.log_info(f"Workflow completed in {execution_time:.2f} seconds")
-            
+
             # 結果の整形と返却
             return self._format_result(final_state)
-            
+
         except Exception as e:
             self.logger.log_error_details(
                 error=e,
@@ -218,10 +189,7 @@ class SwingCoachingSystem:
     def _format_result(self, state: AgentState) -> Dict[str, Any]:
         """最終結果を整形"""
         return {
-            "interactive_questions": [
-                msg["question"] for msg in state.get("conversation", [])
-                if msg.get("role") == "assistant" and "question" in msg
-            ],
+            "interactive_questions": state.get("interactive_questions", []),
             "motion_analysis": state.get("motion_analysis", {}),
             "goal_setting": state.get("goals", {}),
             "training_plan": state.get("plan", {}),
@@ -233,7 +201,7 @@ class SwingCoachingSystem:
                     "error_count": len(state.get("errors", [])),
                     "last_agent": state.get("last_agent", ""),
                     "total_time": (
-                        datetime.now() - state["start_time"]
+                        datetime.now() - state.get("start_time", datetime.now())
                     ).total_seconds() if "start_time" in state else 0
                 }
             }

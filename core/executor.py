@@ -7,10 +7,6 @@ from core.state import AgentState, StateManager
 from core.logger import SystemLogger
 from agents.base import BaseAgent
 
-class ExecutionError(Exception):
-    """実行エラーを表す例外クラス"""
-    pass
-
 class Executor:
     """エージェントの実行を管理するクラス"""
 

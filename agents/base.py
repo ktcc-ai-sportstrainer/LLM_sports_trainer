@@ -26,7 +26,3 @@ class BaseAgent(ABC):
             content=content,
             timestamp=datetime.now().isoformat()
         )
-
-    def _validate_input(self, *args, **kwargs) -> bool:
-        """入力の妥当性を検証"""
-        return True

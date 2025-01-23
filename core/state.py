@@ -22,63 +22,6 @@ class AgentState(TypedDict):
     errors: List[Dict[str, Any]]
     last_agent: str
 
-class StateValidator:
-    """状態の妥当性を検証するクラス"""
-    
-    @staticmethod
-    def validate_paths(user_video_path: str, ideal_video_path: str) -> bool:
-        """動画パスの妥当性を検証"""
-        if not user_video_path or not ideal_video_path:
-            return False
-        
-        valid_extensions = {'.mp4', '.mov', '.avi'}
-        return (any(user_video_path.lower().endswith(ext) for ext in valid_extensions) and
-                any(ideal_video_path.lower().endswith(ext) for ext in valid_extensions))
-
-    @staticmethod
-    def validate_persona_data(data: Dict[str, Any]) -> bool:
-        """ペルソナデータの妥当性を検証"""
-        required_fields = {
-            'age', 'experience', 'level', 'height', 
-            'weight', 'position', 'batting_style'
-        }
-        return all(field in data for field in required_fields)
-
-    @staticmethod
-    def validate_policy_data(data: Dict[str, Any]) -> bool:
-        """指導方針データの妥当性を検証"""
-        required_fields = {
-            'focus_points', 'teaching_style', 'goal'
-        }
-        return all(field in data for field in required_fields)
-
-    @staticmethod
-    def validate_state(state: AgentState) -> bool:
-        """状態全体の妥当性を検証"""
-        try:
-            # 基本情報の検証
-            if not StateValidator.validate_paths(
-                state['user_video_path'], 
-                state['ideal_video_path']
-            ):
-                return False
-
-            if not StateValidator.validate_persona_data(state['persona_data']):
-                return False
-
-            if not StateValidator.validate_policy_data(state['policy_data']):
-                return False
-
-            # ステータスの検証
-            valid_statuses = {'started', 'running', 'completed', 'error'}
-            if state['status'] not in valid_statuses:
-                return False
-
-            return True
-            
-        except KeyError:
-            return False
-
 def create_initial_state(
     persona_data: Dict[str, Any],
     policy_data: Dict[str, Any],
