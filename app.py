@@ -1,115 +1,111 @@
-# app.py
-
 import streamlit as st
 from config import load_config
 from core.system import SwingCoachingSystem
 import os
+import json
+import asyncio
+from agents.interactive_agent.agent import InteractiveAgent
+
+def get_streamlit_user_answer(question: str) -> str:
+    """
+    Streamlitでユーザーからの回答を受け取る。
+    ここではシンプルに `st.text_input` を用いる例。
+    実際にはUI上で「次へ」ボタンなどを押さないとループできないなど工夫が必要。
+    """
+    st.write(f"### 質問: {question}")
+    user_input = st.text_input("あなたの回答", key=question)  # keyにquestionを使うのは簡易例
+    # Streamlit はリアルタイム対話に少し工夫が必要。ここでは極簡易例として示す。
+    return user_input if user_input else "（未入力）"
 
 def main():
-    st.title("野球スイングコーチングAI")
+    st.title("野球スイングコーチングAI - Streamlit Demo")
 
-    st.sidebar.header("選手情報 (ペルソナ)")
-    age = st.sidebar.number_input("年齢", min_value=5, max_value=100, value=20)
-    experience = st.sidebar.text_input("野球経験", "1年")
-    level = st.sidebar.selectbox("現在のレベル", ["初心者", "中級者", "上級者"])
-    height = st.sidebar.number_input("身長(cm)", min_value=100, max_value=250, value=170)
-    weight = st.sidebar.number_input("体重(kg)", min_value=30, max_value=150, value=60)
-    position = st.sidebar.selectbox("ポジション", ["投手", "捕手", "内野手", "外野手"])
-    batting_style = st.sidebar.selectbox("打席", ["右打ち", "左打ち", "両打ち"])
+    # 1. JSON入力
+    st.sidebar.header("JSONファイルのアップロード")
+    json_file = st.sidebar.file_uploader("ペルソナ情報 JSONファイル", type=["json"])
 
-    st.sidebar.header("指導方針")
-    focus_points = st.sidebar.multiselect(
-        "重点的に指導したい項目",
-        ["重心移動", "バットコントロール", "タイミング", "パワー", "コンパクトさ"],
-        default=["重心移動", "バットコントロール"]
-    )
-    teaching_style = st.sidebar.selectbox(
-        "指導スタイル",
-        ["詳細な技術指導", "メンタル面重視", "基礎重視", "実践重視"]
-    )
-    goal = st.sidebar.text_input("達成したい目標", "安定したコンタクト")
-
-    # 2つの動画ファイルを受け取る
+    # 2. 動画ファイル
     st.write("## あなたのスイング動画")
     user_uploaded_file = st.file_uploader("アップロードしてください", type=["mp4","mov","avi"])
-    st.write("## 理想のスイング動画")
-    ideal_uploaded_file = st.file_uploader("理想とする選手や自身の別の好調時動画など", type=["mp4","mov","avi"])
+    st.write("## 理想のスイング動画（任意）")
+    ideal_uploaded_file = st.file_uploader("理想のスイング動画をアップロード", type=["mp4","mov","avi"])
 
     if st.button("コーチング開始"):
-        if user_uploaded_file is None or ideal_uploaded_file is None:
-            st.error("あなたのスイング動画と理想のスイング動画、両方をアップロードしてください。")
+        if not json_file or not user_uploaded_file:
+            st.error("JSONファイルと、あなたのスイング動画は必須です。")
+            return
+        
+        # JSON読込
+        try:
+            input_data = json.load(json_file)
+            basic_info = input_data.get("basic_info", {})
+            coaching_policy = input_data.get("coaching_policy", {})
+        except Exception as e:
+            st.error(f"JSONの読み込みに失敗: {e}")
             return
 
-        # 一時ファイルに保存
-        user_temp_path = f"temp_user_{user_uploaded_file.name}"
+        # 動画ファイルを一時保存
+        user_temp_path = f"temp_{user_uploaded_file.name}"
         with open(user_temp_path, "wb") as f:
             f.write(user_uploaded_file.getbuffer())
+        ideal_temp_path = None
+        if ideal_uploaded_file:
+            ideal_temp_path = f"temp_{ideal_uploaded_file.name}"
+            with open(ideal_temp_path, "wb") as f:
+                f.write(ideal_uploaded_file.getbuffer())
 
-        ideal_temp_path = f"temp_ideal_{ideal_uploaded_file.name}"
-        with open(ideal_temp_path, "wb") as f:
-            f.write(ideal_uploaded_file.getbuffer())
-
-        # ペルソナ情報と指導方針
-        persona_data = {
-            "age": age,
-            "experience": experience,
-            "level": level,
-            "height": height,
-            "weight": weight,
-            "position": position,
-            "batting_style": batting_style
-        }
-        policy_data = {
-            "focus_points": focus_points,
-            "teaching_style": teaching_style,
-            "goal": goal
-        }
-
-        # システム実行
+        # SwingCoachingSystem初期化
         config = load_config.load_config()
         system = SwingCoachingSystem(config)
 
-        with st.spinner("分析中...少々お待ちください。"):
-            import asyncio
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
-                system.run(
-                    persona_data,
-                    policy_data,
-                    user_video_path=user_temp_path,
-                    ideal_video_path=ideal_temp_path
-                )
+        # InteractiveAgentを「streamlit」モードに切り替え
+        interactive_agent = system.agents["interactive"]
+        if isinstance(interactive_agent, InteractiveAgent):
+            interactive_agent.mode = "streamlit"
+            interactive_agent.set_streamlit_callback(get_streamlit_user_answer)
+
+        # 非同期実行
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(
+            system.run(
+                persona_data=basic_info,
+                policy_data=coaching_policy,
+                user_video_path=user_temp_path,
+                ideal_video_path=ideal_temp_path
             )
+        )
 
         # 結果表示
-        st.success("分析が完了しました！")
+        st.subheader("1. Interactive Q&A")
+        conv = result.get("interactive_questions", [])
+        if conv:
+            for c in conv:
+                st.write(f"- {c}")
+        else:
+            st.write("No conversation logs found.")
 
-        st.subheader("1. InteractiveAgentの追加質問")
-        for q in result.get("interactive_questions", []):
-            st.write("- " + q)
-
-        st.subheader("2. スイング解析 (ModelingAgent)")
+        st.subheader("2. Motion Analysis")
         st.json(result.get("motion_analysis", {}))
 
-        st.subheader("3. 目標設定 (GoalSettingAgent)")
+        st.subheader("3. Goal Setting")
         st.json(result.get("goal_setting", {}))
 
-        st.subheader("4. 練習計画 (PlanAgent)")
+        st.subheader("4. Training Plan")
         st.json(result.get("training_plan", {}))
 
-        st.subheader("5. 参考リソース (SearchAgent)")
+        st.subheader("5. Search Results")
         st.json(result.get("search_results", {}))
 
-        st.subheader("6. 最終まとめ (SummarizeAgent)")
-        final_summary = result.get("final_summary", {})
-        if "summary" in final_summary:
-            st.write(final_summary["summary"])
+        st.subheader("6. Final Summary")
+        fs = result.get("final_summary", {})
+        if "summary" in fs:
+            st.write(fs["summary"])
 
-        # 後始末: 一時ファイル削除
+        # 一時ファイルの後始末
         if os.path.exists(user_temp_path):
             os.remove(user_temp_path)
-        if os.path.exists(ideal_temp_path):
+        if ideal_temp_path and os.path.exists(ideal_temp_path):
             os.remove(ideal_temp_path)
 
 if __name__ == "__main__":

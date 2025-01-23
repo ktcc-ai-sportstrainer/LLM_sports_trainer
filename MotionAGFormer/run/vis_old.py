@@ -54,14 +54,14 @@ def show3Dpose(vals, ax):
     lcolor=(0,0,1)
     rcolor=(1,0,0)
 
-    I = np.array([0, 0, 1, 4, 2, 5, 0, 7, 8,  8, 14, 15, 11, 12, 8,  9])
-    J = np.array([1, 4, 2, 5, 3, 6, 7, 8, 14, 11, 15, 16, 12, 13, 9, 10])
+    I = np.array( [0, 0, 1, 4, 2, 5, 0, 7,  8,  8, 14, 15, 11, 12, 8,  9])
+    J = np.array( [1, 4, 2, 5, 3, 6, 7, 8, 14, 11, 15, 16, 12, 13, 9, 10])
 
-    LR = np.array([0, 1, 0, 1, 0, 1, 0, 0, 0, 1,  0,  0,  1,  1, 0, 0], dtype=bool)
+    LR = np.array([0, 1, 0, 1, 0, 1, 0, 0, 0,   1,  0,  0,  1,  1, 0, 0], dtype=bool)
 
-    for i in np.arange(len(I)):
-        x, y, z = [np.array([vals[I[i], j], vals[J[i], j]]) for j in range(3)]
-        ax.plot(x, y, z, lw=2, color=lcolor if LR[i] else rcolor)
+    for i in np.arange( len(I) ):
+        x, y, z = [np.array( [vals[I[i], j], vals[J[i], j]] ) for j in range(3)]
+        ax.plot(x, y, z, lw=2, color = lcolor if LR[i] else rcolor)
 
     RADIUS = 0.72
     RADIUS_Z = 0.7
@@ -70,16 +70,16 @@ def show3Dpose(vals, ax):
     ax.set_xlim3d([-RADIUS+xroot, RADIUS+xroot])
     ax.set_ylim3d([-RADIUS+yroot, RADIUS+yroot])
     ax.set_zlim3d([-RADIUS_Z+zroot, RADIUS_Z+zroot])
-    ax.set_aspect('auto')
+    ax.set_aspect('auto') # works fine in matplotlib==2.2.2
 
     white = (1.0, 1.0, 1.0, 0.0)
-    ax.xaxis.set_pane_color(white)
+    ax.xaxis.set_pane_color(white) 
     ax.yaxis.set_pane_color(white)
     ax.zaxis.set_pane_color(white)
 
-    ax.tick_params('x', labelbottom=False)
-    ax.tick_params('y', labelleft=False)
-    ax.tick_params('z', labelleft=False)
+    ax.tick_params('x', labelbottom = False)
+    ax.tick_params('y', labelleft = False)
+    ax.tick_params('z', labelleft = False)
 
 
 def get_pose2D(video_path, output_dir):
@@ -108,10 +108,6 @@ def img2video(video_path, output_dir):
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
     names = sorted(glob.glob(os.path.join(output_dir + 'pose/', '*.png')))
-    if len(names) == 0:
-        print("No images found in pose/ directory, skipping img2video.")
-        return
-
     img = cv2.imread(names[0])
     size = (img.shape[1], img.shape[0])
 
@@ -119,8 +115,8 @@ def img2video(video_path, output_dir):
     videoWrite = cv2.VideoWriter(output_dir + video_name + '.mp4', fourcc, fps, size) 
 
     for name in names:
-        frame_img = cv2.imread(name)
-        videoWrite.write(frame_img)
+        img = cv2.imread(name)
+        videoWrite.write(img)
 
     videoWrite.release()
 
@@ -160,6 +156,29 @@ def turn_into_clips(keypoints):
                 clips.append(keypoints_clip)
     return clips, downsample
 
+def turn_into_h36m(keypoints):
+    new_keypoints = np.zeros_like(keypoints)
+    new_keypoints[..., 0, :] = (keypoints[..., 11, :] + keypoints[..., 12, :]) * 0.5
+    new_keypoints[..., 1, :] = keypoints[..., 11, :]
+    new_keypoints[..., 2, :] = keypoints[..., 13, :]
+    new_keypoints[..., 3, :] = keypoints[..., 15, :]
+    new_keypoints[..., 4, :] = keypoints[..., 12, :]
+    new_keypoints[..., 5, :] = keypoints[..., 14, :]
+    new_keypoints[..., 6, :] = keypoints[..., 16, :]
+    new_keypoints[..., 8, :] = (keypoints[..., 5, :] + keypoints[..., 6, :]) * 0.5
+    new_keypoints[..., 7, :] = (new_keypoints[..., 0, :] + new_keypoints[..., 8, :]) * 0.5
+    new_keypoints[..., 9, :] = keypoints[..., 0, :]
+    new_keypoints[..., 10, :] = (keypoints[..., 1, :] + keypoints[..., 2, :]) * 0.5
+    new_keypoints[..., 11, :] = keypoints[..., 6, :]
+    new_keypoints[..., 12, :] = keypoints[..., 8, :]
+    new_keypoints[..., 13, :] = keypoints[..., 10, :]
+    new_keypoints[..., 14, :] = keypoints[..., 5, :]
+    new_keypoints[..., 15, :] = keypoints[..., 7, :]
+    new_keypoints[..., 16, :] = keypoints[..., 9, :]
+
+    return new_keypoints
+
+
 def flip_data(data, left_joints=[1, 2, 3, 14, 15, 16], right_joints=[4, 5, 6, 11, 12, 13]):
     """
     data: [N, F, 17, D] or [F, 17, D]
@@ -169,14 +188,8 @@ def flip_data(data, left_joints=[1, 2, 3, 14, 15, 16], right_joints=[4, 5, 6, 11
     flipped_data[..., left_joints + right_joints, :] = flipped_data[..., right_joints + left_joints, :]  # Change orders
     return flipped_data
 
-
 @torch.no_grad()
-def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
-    """
-    メインの3D姿勢推定。最終的に all_3d_coords を JSON出力する。
-    さらに同じ構造を呼び出し元に返すか、標準出力に出しても良い。
-    """
-    # parse known args for model config
+def get_pose3D(video_path, output_dir):
     args, _ = argparse.ArgumentParser().parse_known_args()
     args.n_layers, args.dim_in, args.dim_feat, args.dim_rep, args.dim_out = 16, 3, 128, 512, 3
     args.mlp_ratio, args.act_layer = 4, nn.GELU
@@ -189,26 +202,29 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
     args.n_frames = 243
     args = vars(args)
 
+    ## Reload 
     model = nn.DataParallel(MotionAGFormer(**args)).cuda()
 
-    # load pretrained
+    # Put the pretrained model of MotionAGFormer in 'checkpoint/'
     model_path = sorted(glob.glob(os.path.join('checkpoint', 'motionagformer-b-h36m.pth.tr')))[0]
+
     pre_dict = torch.load(model_path)
     model.load_state_dict(pre_dict['model'], strict=True)
 
     model.eval()
 
-    # 2D keypoints 
+    ## input
     keypoints_file = os.path.join(output_dir, 'input_2D', 'keypoints.npz')
     keypoints = np.load(keypoints_file, allow_pickle=True)['reconstruction']
 
-    # Clips
+    # クリップ分割
     clips, downsample = turn_into_clips(keypoints)
 
     cap = cv2.VideoCapture(video_path)
     video_length = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     print('\nGenerating 2D pose image...')
 
+    # 2D可視化の出力ディレクトリ
     output_dir_2D = os.path.join(output_dir, 'pose2D')
     os.makedirs(output_dir_2D, exist_ok=True)
 
@@ -217,19 +233,23 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
         if img is None:
             continue
 
-        input_2D = keypoints[0][i]  # single frame
-        overlay_img = show2Dpose(input_2D, copy.deepcopy(img))
-        cv2.imwrite(os.path.join(output_dir_2D, f"{i:04d}_2D.png"), overlay_img)
+        input_2D = keypoints[0][i]  # 単フレーム分の2Dキーポイント
+        
+        image = show2Dpose(input_2D, copy.deepcopy(img))
+        cv2.imwrite(os.path.join(output_dir_2D, f"{i:04d}_2D.png"), image)
     
     print('\nGenerating 3D pose...')
 
+    # 3D可視化の出力ディレクトリ
     output_dir_3D = os.path.join(output_dir, 'pose3D')
     os.makedirs(output_dir_3D, exist_ok=True)
 
+    # すべてのフレームに対する3D座標を保持するリスト
     all_3d_coords = []
+
     idx_offset = 0
-    ret, temp_img = cap.read()  # read 1 frame to get shape
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # reset position
+    ret, temp_img = cap.read()  # 画像サイズを取得するために一度だけ読む
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 読み込み位置を0に戻す
     img_size = temp_img.shape if temp_img is not None else (1080,1920,3)
 
     for idx, clip in enumerate(clips):
@@ -243,40 +263,38 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
         output_3D_flip = flip_data(model(input_2D_aug))
         output_3D = (output_3D_non_flip + output_3D_flip) / 2
 
-        # handle re-sample
+        # リサンプリング補正
         if idx == len(clips) - 1 and downsample is not None:
             output_3D = output_3D[:, downsample]
 
-        # place hip(0) to origin
+        # hip(0番目)を原点へ
         output_3D[:, :, 0, :] = 0
-        post_out_all = output_3D[0].cpu().detach().numpy()  # shape: (n_frames, 17, 3)
+        post_out_all = output_3D[0].cpu().detach().numpy()  # (フレーム数, 17, 3)
 
         for j, post_out in enumerate(post_out_all):
-            frame_index = idx_offset + j
-            # camera_to_world transform
+            # camera_to_world 変換
             rot = [0.1407056450843811, -0.1500701755285263, -0.755240797996521, 0.6223280429840088]
             rot = np.array(rot, dtype='float32')
             post_out = camera_to_world(post_out, R=rot, t=0)
-
-            # min=0, then scale
+            # 高さを0に揃えつつ正規化
             post_out[:, 2] -= np.min(post_out[:, 2])
-            scale_val = np.max(post_out)
-            if scale_val > 1e-6:
-                post_out /= scale_val
+            max_value = np.max(post_out)
+            post_out /= max_value
 
-            coords_list = post_out.tolist()
-
+            # ★ ここでJSON用に座標をリスト化して保存する
+            frame_index = idx_offset + j
             all_3d_coords.append({
                 "frame_index": frame_index,
-                "coordinates": coords_list
+                "coordinates": post_out.tolist()  # (17,3) をそのままリスト化
             })
 
-            # 3D visualize
+            # 3D可視化用の描画
             fig = plt.figure(figsize=(9.6, 5.4))
             gs = gridspec.GridSpec(1, 1)
-            gs.update(wspace=-0.00, hspace=0.05)
+            gs.update(wspace=-0.00, hspace=0.05) 
             ax = plt.subplot(gs[0], projection='3d')
             show3Dpose(post_out, ax)
+
             plt.savefig(os.path.join(output_dir_3D, f"{frame_index:04d}_3D.png"),
                         dpi=200, format='png', bbox_inches='tight')
             plt.close(fig)
@@ -285,19 +303,12 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
         
     print('Generating 3D pose successful!')
 
-    # Write JSON
-    final_json = {
-        "video_file": video_path,
-        "total_frames": len(all_3d_coords),
-        "frames": all_3d_coords
-    }
-    with open(os.path.join(output_dir, output_json_path), 'w', encoding='utf-8') as f:
-        json.dump(final_json, f, indent=4)
+    # ★ 最後にJSONを書き出す
+    output_json_path = os.path.join(output_dir, '3d_result.json')
+    with open(output_json_path, 'w') as f:
+        json.dump(all_3d_coords, f, indent=4)
 
-    # さらに標準出力にもJSONを書き出し:
-    print(json.dumps(final_json, ensure_ascii=False, indent=4))
-
-    # create demo video
+    ## 2D/3D を並べたデモ出力
     print('\nGenerating demo...')
     image_2d_dir = sorted(glob.glob(os.path.join(output_dir_2D, '*.png')))
     image_3d_dir = sorted(glob.glob(os.path.join(output_dir_3D, '*.png')))
@@ -309,16 +320,13 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
         image_2d = plt.imread(image_2d_dir[i])
         image_3d = plt.imread(image_3d_dir[i])
 
-        # Crop example
-        if image_2d.shape[0] < image_2d.shape[1]:
-            edge = (image_2d.shape[1] - image_2d.shape[0]) // 2
-            image_2d = image_2d[:, edge:(image_2d.shape[1] - edge)]
+        # 2D画像を正方形に近い形へクロップ（任意の処理）
+        edge = (image_2d.shape[1] - image_2d.shape[0]) // 2
+        image_2d = image_2d[:, edge:image_2d.shape[1] - edge]
 
-        # 3D image crop
+        # 3D画像も同様にクロップ（必要に応じて調整）
         edge = 130
-        if image_3d.shape[0] > edge*2 and image_3d.shape[1] > edge*2:
-            image_3d = image_3d[edge:image_3d.shape[0] - edge,
-                                 edge:image_3d.shape[1] - edge]
+        image_3d = image_3d[edge:image_3d.shape[0] - edge, edge:image_3d.shape[1] - edge]
 
         fig = plt.figure(figsize=(15.0, 5.4))
         ax = plt.subplot(121)
@@ -339,25 +347,17 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--video', type=str, default='sample_video.mp4', help='Path to input video')
+    parser.add_argument('--video', type=str, default='sample_video.mp4', help='input video')
     parser.add_argument('--gpu', type=str, default='0', help='gpu id')
-    parser.add_argument('--out_json', type=str, default='3d_result.json', help='Output JSON file name')
     args = parser.parse_args()
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 
-    video_path = args.video
-    video_name = os.path.splitext(os.path.basename(video_path))[0]
-    output_dir = f'./run/output/{video_name}/'
-    os.makedirs(output_dir, exist_ok=True)
+    video_path = './run/video/' + args.video
+    video_name = video_path.split('/')[-1].split('.')[0]
+    output_dir = './run/output/' + video_name + '/'
 
-    # 1) 2D keypoints extraction
     get_pose2D(video_path, output_dir)
-
-    # 2) 3D pose estimation + JSON output
-    get_pose3D(video_path, output_dir, output_json_path=args.out_json)
-
-    # 3) 2D/3D combined video
+    get_pose3D(video_path, output_dir)
     img2video(video_path, output_dir)
-
     print('Generating demo successful!')

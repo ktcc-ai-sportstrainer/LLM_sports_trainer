@@ -1,8 +1,8 @@
 from datetime import datetime
-from typing import Dict, Any, List, Optional, TypedDict
+from typing import Dict, Any, Optional
 import os
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph
+
 from agents import (
     InteractiveAgent,
     ModelingAgent,
@@ -11,19 +11,20 @@ from agents import (
     SearchAgent,
     SummarizeAgent
 )
-from core.state import AgentState, create_initial_state
 from core.logger import SystemLogger
-from models.input.persona import Persona
-from models.input.policy import TeachingPolicy
+
 
 class SwingCoachingSystem:
-    """野球スイングコーチングシステム全体を制御するクラス"""
+    """
+    システム全体を制御するクラス。
+    persona_data, policy_data, user_video_path, ideal_video_path などを入力し、
+    エージェント群(Interactive,Modeling,...)を順次呼び出して最終結果をまとめる。
+    """
 
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = SystemLogger()
 
-        # OpenAI APIキーの取得と検証
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
             raise ValueError("OPENAI_API_KEY environment variable is not set")
@@ -35,169 +36,91 @@ class SwingCoachingSystem:
             temperature=0.7
         )
 
-        # エージェントの初期化
-        self.agents = {
-            "interactive": InteractiveAgent(self.llm),
-            "modeling": ModelingAgent(self.llm),
-            "goal_setting": GoalSettingAgent(self.llm),
-            "plan": PlanAgent(self.llm),
-            "search": SearchAgent(self.llm),
-            "summary": SummarizeAgent(self.llm)
-        }
+        # エージェント辞書（後で初期化/更新）
+        self.agents: Dict[str, Any] = {}
 
-        # ワークフローの構築 (コンストラクタ内で直接定義)
-        self.workflow = StateGraph(AgentState)
-        for name, agent in self.agents.items():
-            node_name = f"{name}_node"
-            self.workflow.add_node(node_name, self._create_agent_handler(name, agent))
-        self.workflow.add_edge("interactive_node", "modeling_node")
-        self.workflow.add_edge("modeling_node", "goal_setting_node")
-        self.workflow.add_edge("goal_setting_node", "plan_node")
-        self.workflow.add_edge("plan_node", "search_node")
-        self.workflow.add_edge("search_node", "summary_node")
-        self.workflow.set_entry_point("interactive_node")
-        self.workflow.set_finish_point("summary_node")
-        self.workflow = self.workflow.compile()
-
-    def _create_agent_handler(self, name: str, agent: Any):
-        """エージェント実行用のハンドラを生成"""
-        async def handler(state: AgentState) -> AgentState:
-            try:
-                self.logger.log_info(f"Starting {name} agent", agent=name)
-
-                # エージェントの入力を準備
-                input_data = self._prepare_agent_input(name, state)
-
-                # エージェントの実行
-                start_time = datetime.now()
-                result = await agent.run(**input_data)
-                execution_time = (datetime.now() - start_time).total_seconds()
-                self.logger.log_info(f"Agent {name} completed in {execution_time:.2f} seconds", agent=name)
-
-                # 状態の更新
-                new_state = {
-                    **state,
-                    "last_agent": name,
-                    "status": "completed"
-                }
-                if result:
-                    new_state.update(result)
-
-                return new_state
-
-            except Exception as e:
-                self.logger.log_error_details(error=e, agent=name)
-                return {
-                    **state,
-                    "status": "error",
-                    "errors": state.get("errors", []) + [{
-                        "agent": name,
-                        "error": str(e),
-                        "timestamp": datetime.now().isoformat()
-                    }]
-                }
-
-        return handler
-
-    def _prepare_agent_input(self, agent_name: str, state: AgentState) -> Dict[str, Any]:
-        """エージェント実行のために必要な入力データを準備"""
-        if agent_name == "interactive":
-            return {
-                "persona": Persona(**state["persona_data"]),
-                "policy": TeachingPolicy(**state["policy_data"]),
-                "conversation_history": state.get("conversation", [])
-            }
-        elif agent_name == "modeling":
-            return {
-                "user_video_path": state["user_video_path"],
-                "ideal_video_path": state["ideal_video_path"]
-            }
-        elif agent_name == "goal_setting":
-            return {
-                "persona": Persona(**state["persona_data"]),
-                "policy": TeachingPolicy(**state["policy_data"]),
-                "conversation_insights": state.get("conversation", []),
-                "motion_analysis": state.get("motion_analysis", {})
-            }
-        elif agent_name == "plan":
-            return {
-                "goal": state.get("goals", {}),
-                "issues": state.get("motion_analysis", {}).get("user_analysis", {}).get("issues", [])
-            }
-        elif agent_name == "search":
-            return {
-                "tasks": state.get("plan", {}).get("tasks", []),
-                "player_level": state["persona_data"]["level"]
-            }
-        elif agent_name == "summary":
-            return {
-                "analysis": state.get("motion_analysis", {}),
-                "goal": state.get("goals", {}),
-                "plan": state.get("plan", {})
-            }
-        else:
-            raise ValueError(f"Unknown agent: {agent_name}")
-
-    async def run(self, persona_data, policy_data, user_video_path, ideal_video_path=None):
+    async def run(
+        self,
+        persona_data: Dict[str, Any],
+        policy_data: Dict[str, Any],
+        user_video_path: str,
+        ideal_video_path: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        1) InteractiveAgent で追加情報収集
+        2) ModelingAgent で3D推定 & 分析
+        3) GoalSettingAgent で目標設定
+        4) PlanAgent で練習計画
+        5) SearchAgent で補足情報検索
+        6) SummarizeAgent で最終レポート
+        """
         try:
-            # エージェントの連携フロー修正
-            interactive_result = await self.agents["interactive"].run(persona_data, policy_data)
-            
-            modeling_result = await self.agents["modeling"].run(
+            # Personaから身長を取得(例: "height" key)
+            user_height = persona_data.get("height", 170.0)  # 未設定なら170cm仮定
+
+            # 1. 各エージェントを初期化
+            #   InteractiveAgent, ModelingAgent(user_height=...), ...
+            interactive_agent = InteractiveAgent(self.llm)  # "mock"/"cli"/"streamlit"は後から変更するなど
+            modeling_agent = ModelingAgent(self.llm, user_height=user_height)
+            goal_agent = GoalSettingAgent(self.llm)
+            plan_agent = PlanAgent(self.llm, SearchAgent(self.llm))
+            summarize_agent = SummarizeAgent(self.llm)
+
+            # 2. 実行フロー
+            # 2-1) Interactive
+            interactive_result = await interactive_agent.run(
+                persona=persona_data,  # type: Personaのdict
+                policy=policy_data     # type: Policyのdict
+            )
+
+            # 2-2) Modeling
+            modeling_result = await modeling_agent.run(
                 user_video_path, ideal_video_path
             )
-            
-            goal_result = await self.agents["goal_setting"].run(
-                persona_data, 
-                policy_data,
-                interactive_result["conversation_history"],
-                modeling_result
-            )
-            
-            # SearchAgentをPlanAgentに注入
-            search_agent = self.agents["search"]
-            plan_agent = PlanAgent(self.llm, search_agent)
-            
-            plan_result = await plan_agent.run(
-                goal_result["goals"],
-                goal_result["search_queries"]
-            )
-            
-            summary_result = await self.agents["summary"].run(
-                modeling_result,
-                goal_result,
-                plan_result
-            )
-            
-            return self._format_result({
-                "interactive": interactive_result,
-                "modeling": modeling_result,
-                "goals": goal_result,
-                "plan": plan_result,
-                "summary": summary_result
-            })
 
-        except Exception as e:
-            self.logger.error(f"System error: {str(e)}")
-            raise
+            # 2-3) Goal Setting
+            conversation_insights = interactive_result.get("interactive_insights", [])
+            goal_result = await goal_agent.run(
+                persona=persona_data,
+                policy=policy_data,
+                conversation_insights=conversation_insights,
+                motion_analysis=modeling_result
+            )
 
-    def _format_result(self, state: AgentState) -> Dict[str, Any]:
-        """最終結果を整形"""
-        return {
-            "interactive_questions": state.get("interactive_questions", []),
-            "motion_analysis": state.get("motion_analysis", {}),
-            "goal_setting": state.get("goals", {}),
-            "training_plan": state.get("plan", {}),
-            "search_results": state.get("resources", {}),
-            "final_summary": {
-                "summary": state.get("summary", ""),
-                "execution_metrics": {
-                    "status": state.get("status", "unknown"),
-                    "error_count": len(state.get("errors", [])),
-                    "last_agent": state.get("last_agent", ""),
-                    "total_time": (
-                        datetime.now() - state.get("start_time", datetime.now())
-                    ).total_seconds() if "start_time" in state else 0
+            # 2-4) Plan
+            #   PlanAgentに目標やインサイト等を渡して計画を生成
+            #   ただし、PlanAgent.run()のシグネチャは実装次第
+            #   例: plan_agent.run(goal=goal_result["goals"], interactive_insights=conversation_insights)
+            plan_output = await plan_agent.run(
+                goal=goal_result.get("goals", {}),
+                interactive_insights=conversation_insights
+            )
+
+            # 2-5) Summarize
+            final_summary = await summarize_agent.run(
+                analysis=modeling_result,
+                goal=goal_result,
+                plan=plan_output.get("plan", {})
+            )
+
+            # 3. 結果まとめ
+            return {
+                "interactive_questions": interactive_result.get("conversation_history", []),
+                "motion_analysis": modeling_result,
+                "goal_setting": goal_result,
+                "training_plan": plan_output.get("plan", {}),
+                "search_results": plan_output.get("plan", {}).get("references", {}),
+                "final_summary": {
+                    "summary": final_summary.get("summary", ""),
+                    "execution_metrics": {
+                        "status": "completed",
+                        "error_count": 0,
+                        "last_agent": "summary",
+                        "total_time": 0.0  # 適宜計測
+                    }
                 }
             }
-        }
+
+        except Exception as e:
+            self.logger.log_error(f"System error: {str(e)}")
+            raise

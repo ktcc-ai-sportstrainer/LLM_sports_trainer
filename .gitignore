@@ -8,3 +8,4 @@ MotionAGFormer/run/video/
 venv/
 data/
 logs/
+logs/*

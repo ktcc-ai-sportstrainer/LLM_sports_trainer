@@ -1,51 +1,81 @@
+# agents/search_agent/agent.py
+
 from typing import Any, Dict, List
 import json
 import os
 from langchain_community.agent_toolkits.load_tools import load_tools
-from langchain.agents import initialize_agent
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-
 from agents.base import BaseAgent
 
 class SearchAgent(BaseAgent):
+    """
+    各種キーワードでGoogle検索を行い、その結果をPlanAgent等に提供するエージェント。
+    """
+
     def __init__(self, llm: ChatOpenAI):
         super().__init__(llm)
-        self.search_tools = load_tools(["google-search", "web-browser"])
-        
-    async def run(
-        self,
-        search_requests: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
-        search_results = {}
+        # prepare search tools
+        self.search_tools = load_tools(["google-search"])
+        self.prompts = self._load_prompts()
+
+    def _load_prompts(self) -> Dict[str, str]:
+        prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    async def run(self, search_requests: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        複数の検索要求をまとめて処理し、 {goal_id: [results...]} のような形で返す。
+        """
+        results_dict = {}
         for request in search_requests:
-            results = await self._execute_search(request)
-            search_results[request["goal_id"]] = results
-            
-        analyzed_results = await self._analyze_search_results(search_results)
-        return analyzed_results
+            goal_id = request.get("goal_id", "unknown")
+            single_result = await self._execute_search(request)
+            results_dict[goal_id] = single_result
+        # Optional: まとめてLLMで分析
+        analyzed = await self._analyze_search_results(results_dict)
+        return analyzed
 
     async def _execute_search(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        query = request["query"]
-        category = request["category"]
-        expected_info = request["expected_info"]
-        
-        raw_results = await self.search_tools["google-search"].arun(query)
-        filtered_results = await self._filter_results(
-            raw_results, category, expected_info
-        )
-        return filtered_results
+        """
+        requestには {query, category, expected_info, goal_id} 等が入る想定
+        """
+        query = request.get("query", "")
+        if not query:
+            return {}
 
-    async def _filter_results(
-        self,
-        results: str,
-        category: str,
-        expected_info: str
-    ) -> Dict[str, Any]:
+        # 実際にsearch_toolsを使って検索:
+        raw_results = await self.search_tools["google-search"].arun(query)
+        # raw_results はテキストかJSON文字列かなどライブラリ次第
+        filtered = await self._filter_results(
+            raw_results, request.get("category", ""), request.get("expected_info", "")
+        )
+        return filtered
+
+    async def _filter_results(self, results: str, category: str, expected_info: str) -> Dict[str, Any]:
+        """
+        LLMを使い、検索結果をカテゴリや期待情報でフィルタする。
+        """
         prompt = self.prompts["filter_prompt"].format(
             results=results,
             category=category,
             expected_info=expected_info
         )
         response = await self.llm.ainvoke(prompt)
-        return json.loads(response.content)
+        try:
+            return json.loads(response.content)
+        except json.JSONDecodeError:
+            return {"relevant_info": [], "summary": response.content}
+
+    async def _analyze_search_results(self, results_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        検索結果全体を俯瞰して要約するなどの処理
+        """
+        # result_analysis_promptを使用
+        combined_text = json.dumps(results_dict, ensure_ascii=False)
+        prompt = self.prompts["result_analysis_prompt"].format(results=combined_text)
+        resp = await self.llm.ainvoke(prompt)
+        try:
+            return json.loads(resp.content)
+        except json.JSONDecodeError:
+            return {"training_insights": [], "recommended_resources": [], "raw_response": resp.content}

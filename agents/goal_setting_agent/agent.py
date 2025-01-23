@@ -1,52 +1,54 @@
-from typing import Any, Dict, List
 import json
-import os
+from typing import Any, Dict, List
 from langchain_openai import ChatOpenAI
-from langchain_core.prompts import ChatPromptTemplate
-
 from agents.base import BaseAgent
-from models.input.persona import Persona
-from models.input.policy import TeachingPolicy
-from models.internal.goal import Goal
 
-class SearchAgent(BaseAgent):
+class GoalSettingAgent(BaseAgent):
+    """
+    各種情報を元に、部員に合ったバッティング改善の目標を設定するエージェント。
+    """
+
     def __init__(self, llm: ChatOpenAI):
         super().__init__(llm)
-        self.search_tools = load_tools(["google-search", "web-browser"])
-        
+        self.prompts = self._load_prompts()
+
+    def _load_prompts(self) -> Dict[str, str]:
+        # 同階層にある prompts.json を読み込む想定
+        import os
+        prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
     async def run(
         self,
-        search_requests: List[Dict[str, Any]]
+        persona: Dict[str, Any],
+        policy: Dict[str, Any],
+        conversation_insights: List[Any],
+        motion_analysis: Dict[str, Any]
     ) -> Dict[str, Any]:
-        search_results = {}
-        for request in search_requests:
-            results = await self._execute_search(request)
-            search_results[request["goal_id"]] = results
-            
-        analyzed_results = await self._analyze_search_results(search_results)
-        return analyzed_results
+        """
+        情報をまとめ、LLMに目標を作ってもらう。
+        """
+        try:
+            # goals_promptを使用
+            prompt_template = self.prompts["goals_prompt"]
+            prompt = prompt_template.format(
+                persona=json.dumps(persona, ensure_ascii=False),
+                policy=json.dumps(policy, ensure_ascii=False),
+                insights=json.dumps(conversation_insights, ensure_ascii=False),
+                analysis=json.dumps(motion_analysis, ensure_ascii=False)
+            )
+            response = await self.llm.ainvoke(prompt)
+            # LLMがJSON形式で返す想定
+            try:
+                goal_data = json.loads(response.content)
+            except json.JSONDecodeError:
+                goal_data = {"primary_goal": {}, "sub_goals": []}
 
-    async def _execute_search(self, request: Dict[str, Any]) -> Dict[str, Any]:
-        query = request["query"]
-        category = request["category"]
-        expected_info = request["expected_info"]
-        
-        raw_results = await self.search_tools["google-search"].arun(query)
-        filtered_results = await self._filter_results(
-            raw_results, category, expected_info
-        )
-        return filtered_results
+            return {
+                "goals": goal_data
+            }
 
-    async def _filter_results(
-        self,
-        results: str,
-        category: str,
-        expected_info: str
-    ) -> Dict[str, Any]:
-        prompt = self.prompts["filter_prompt"].format(
-            results=results,
-            category=category,
-            expected_info=expected_info
-        )
-        response = await self.llm.ainvoke(prompt)
-        return json.loads(response.content)
+        except Exception as e:
+            self.logger.log_error_details(error=e, agent=self.agent_name)
+            return {}
