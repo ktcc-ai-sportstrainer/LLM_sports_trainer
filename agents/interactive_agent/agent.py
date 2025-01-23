@@ -95,16 +95,16 @@ class InteractiveAgent(BaseAgent):
 
     async def _generate_initial_questions(self, persona: Persona, policy: TeachingPolicy) -> List[str]:
         prompt = self.prompts["initial_questions_prompt"].format(
-            persona=json.dumps(persona.dict(), ensure_ascii=False),
-            policy=json.dumps(policy.dict(), ensure_ascii=False)
+            persona=json.dumps(persona, ensure_ascii=False),
+            policy=json.dumps(policy, ensure_ascii=False)
         )
         response = await self.llm.ainvoke(prompt)
         return self._parse_questions(response.content)
 
     async def _generate_follow_up(self, persona: Persona, policy: TeachingPolicy) -> Optional[str]:
         prompt = self.prompts["follow_up_prompt"].format(
-            persona=json.dumps(persona.dict(), ensure_ascii=False),
-            policy=json.dumps(policy.dict(), ensure_ascii=False),
+            persona=json.dumps(persona, ensure_ascii=False),
+            policy=json.dumps(policy, ensure_ascii=False),
             conversation_history=self.conversation_history.json()
         )
         response = await self.llm.ainvoke(prompt)

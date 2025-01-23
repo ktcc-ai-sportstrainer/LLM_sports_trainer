@@ -13,7 +13,7 @@ import copy
 import json 
 
 sys.path.append(os.getcwd())
-from run.lib.utils import normalize_screen_coordinates, camera_to_world
+from lib.utils import normalize_screen_coordinates, camera_to_world
 from model.MotionAGFormer import MotionAGFormer
 
 import matplotlib

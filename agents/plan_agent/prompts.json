@@ -1,5 +1,7 @@
 {
     "task_generation_prompt": "目標と収集した情報から具体的なトレーニングタスクを生成してください。\n\n目標:\n{goals}\n\n収集情報:\n{search_results}\n\n出力形式:\n{\n    \"tasks\": [\n        {\n            \"id\": \"タスクID\",\n            \"title\": \"タスク名\",\n            \"description\": \"詳細\",\n            \"category\": \"カテゴリ\",\n            \"duration\": \"所要時間\",\n            \"prerequisites\": [\"前提条件\"],\n            \"equipment\": [\"必要な道具\"],\n            \"metrics\": [\"評価指標\"],\n            \"related_goal_id\": \"関連する目標ID\"\n        }\n    ]\n}",
 
-    "schedule_prompt": "以下のタスクと目標に基づいて練習スケジュールを作成してください。\n\nタスク:\n{tasks}\n\n目標:\n{goals}\n\n出力形式:\n{\n    \"weekly_schedule\": {\n        \"monday\": [{\"task_id\": \"id\", \"time\": \"時間\"}],\n        \"tuesday\": [...]\n    },\n    \"progression_path\": [\n        {\n            \"phase\": \"フェーズ名\",\n            \"duration\": \"期間\",\n            \"focus_tasks\": [\"タスクID\"]\n        }\n    ]\n}"
+    "schedule_prompt": "以下のタスクと目標に基づいて練習スケジュールを作成してください。\n\nタスク:\n{tasks}\n\n目標:\n{goals}\n\n出力形式:\n{\n    \"weekly_schedule\": {\n        \"monday\": [{\"task_id\": \"id\", \"time\": \"時間\"}],\n        \"tuesday\": [...]\n    },\n    \"progression_path\": [\n        {\n            \"phase\": \"フェーズ名\",\n            \"duration\": \"期間\",\n            \"focus_tasks\": [\"タスクID\"]\n        }\n    ]\n}",
+
+    "search_queries_prompt": "以下の目標に対して必要な情報を収集する検索クエリを作ってください... JSON形式で..."
 }

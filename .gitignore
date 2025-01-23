@@ -1,5 +1,4 @@
 .env
-.idea
 wandb
 MotionAGFormer/checkpoint/
 MotionAGFormer/run/output/
@@ -9,3 +8,6 @@ venv/
 data/
 logs/
 logs/*
+MotionAGFormer/run/vis_for_bvh.py
+MotionAGFormer/run/vis_old.py
+MotionAGFormer/JsonAnalist_original.py
