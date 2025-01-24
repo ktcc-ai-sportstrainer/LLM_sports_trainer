@@ -5,7 +5,7 @@ from agents.base import BaseAgent
 
 class GoalSettingAgent(BaseAgent):
     """
-    各種情報を元に、部員に合ったバッティング改善の目標を設定するエージェント。
+    選手の情報と対話内容から、バッティング改善の大枠の目標を設定するエージェント。
     """
 
     def __init__(self, llm: ChatOpenAI):
@@ -13,7 +13,6 @@ class GoalSettingAgent(BaseAgent):
         self.prompts = self._load_prompts()
 
     def _load_prompts(self) -> Dict[str, str]:
-        # 同階層にある prompts.json を読み込む想定
         import os
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
         with open(prompt_path, "r", encoding="utf-8") as f:
@@ -23,27 +22,27 @@ class GoalSettingAgent(BaseAgent):
         self,
         persona: Dict[str, Any],
         policy: Dict[str, Any],
-        conversation_insights: List[Any],
-        motion_analysis: Dict[str, Any]
+        conversation_insights: List[Any]
     ) -> Dict[str, Any]:
         """
-        情報をまとめ、LLMに目標を作ってもらう。
+        ペルソナ情報、指導方針、対話内容から目標を設定。
         """
         try:
-            # goals_promptを使用
-            prompt_template = self.prompts["goals_prompt"]
-            prompt = prompt_template.format(
+            prompt = self.prompts["goals_prompt"].format(
                 persona=json.dumps(persona, ensure_ascii=False),
                 policy=json.dumps(policy, ensure_ascii=False),
-                insights=json.dumps(conversation_insights, ensure_ascii=False),
-                analysis=json.dumps(motion_analysis, ensure_ascii=False)
+                insights=json.dumps(conversation_insights, ensure_ascii=False)
             )
             response = await self.llm.ainvoke(prompt)
-            # LLMがJSON形式で返す想定
+            
             try:
                 goal_data = json.loads(response.content)
             except json.JSONDecodeError:
-                goal_data = {"primary_goal": {}, "sub_goals": []}
+                goal_data = {
+                    "main_goal": "基本スイングの習得と安定化",
+                    "focus_points": ["フォームの基礎固め", "バットコントロール向上"],
+                    "timeframe": "3ヶ月"
+                }
 
             return {
                 "goals": goal_data

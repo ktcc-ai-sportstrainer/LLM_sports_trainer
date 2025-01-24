@@ -23,19 +23,22 @@ class SearchAgent(BaseAgent):
         with open(prompt_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    async def run(self, search_requests: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def run(self, search_requests: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        複数の検索要求をまとめて処理し、 {goal_id: [results...]} のような形で返す。
+        search_requestsがNoneの場合は空の結果を返す
         """
+        if not search_requests:
+            return {"results": {}}
+            
         results_dict = {}
         for request in search_requests:
             goal_id = request.get("goal_id", "unknown")
             single_result = await self._execute_search(request)
             results_dict[goal_id] = single_result
-        # Optional: まとめてLLMで分析
+
         analyzed = await self._analyze_search_results(results_dict)
         return analyzed
-
+    
     async def _execute_search(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """
         requestには {query, category, expected_info, goal_id} 等が入る想定

@@ -113,51 +113,53 @@ class ModelingAgent(BaseAgent):
         return data_dict
 
     async def _analyze_swing(self, pose_json: Dict[str, Any], label: str) -> Dict[str, Any]:
-        """
-        pose_json は vis.py 標準出力 or ファイルから読み込んだ 3D座標構造 ( video_file, frames=[...] )。
-        さらに jsonanalitst.py の analyze_json を呼んで、バット速度や重心などを取得。
-        """
-        # まずは3D座標をファイルに書き出し、一時jsonにする
+        """pose_jsonからjoint_namesとの整合性を取る処理を追加"""
         temp_path = f"./run/temp_{label}_3d_input.json"
-        with open(temp_path, "w", encoding="utf-8") as f:
-            json.dump({
-                "frames": [
-                    {
-                        "frame_index": fdata["frame_index"],
-                        "coordinates": [
-                            {
-                                "joint_name": "", 
-                                "x": 0.0, "y": 0.0, "z": 0.0
-                            }
-                            # ↓↓↓
-                            # ここでは実際に joint_names と fdata["coordinates"] の整合を取り、 
-                            # {joint_name, x, y, z} 構造に変換
-                            for _ in range(17)
-                        ]
-                    } for fdata in pose_json.get("frames", [])
-                ]
-            }, f, indent=2)
-
-        # ここで "temp_path" を JsonAnalistに渡す
-        analysis_result = analyze_json(temp_path, verbose=False)
-        # analysis_result = {
-        #   "idealgravity": [...],
-        #   "judge": [...],
-        #   "speed": ...,
-        #   ...
-        # }
-
-        # LLMへのプロンプト例:
-        # if self.prompts["metrics_analysis_prompt"]: 
-        #   prompt = ...
-        #   response = await self.llm.ainvoke(prompt)
-        #   ...
-
-        # ここではシンプルに analysis_result をまとめて返す
-        return {
-            "pose_json": pose_json,    # 3D座標(ノーマライズ後)
-            "analyst_result": analysis_result
+        
+        # joint_names との対応を定義
+        joint_mapping = {
+            "Hip": "Hip", "RHip": "RHip", "RKnee": "RKnee", "RAnkle": "RAnkle",
+            "LHip": "LHip", "LKnee": "LKnee", "LAnkle": "LAnkle",
+            "Spine": "Spine", "Thorax": "Thorax", "Neck/Nose": "Neck/Nose", "Head": "Head",
+            "LShoulder": "LShoulder", "LElbow": "LElbow", "LWrist": "LWrist",
+            "RShoulder": "RShoulder", "RElbow": "RElbow", "RWrist": "RWrist"
         }
+
+        try:
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump({
+                    "frames": [
+                        {
+                            "frame_index": fdata["frame_index"],
+                            "coordinates": [
+                                {
+                                    "joint_name": joint_name,
+                                    "x": fdata["coordinates"][i][0] if i < len(fdata["coordinates"]) else 0.0,
+                                    "y": fdata["coordinates"][i][1] if i < len(fdata["coordinates"]) else 0.0,
+                                    "z": fdata["coordinates"][i][2] if i < len(fdata["coordinates"]) else 0.0
+                                }
+                                for i, joint_name in enumerate(joint_mapping.keys())
+                            ]
+                        }
+                        for fdata in pose_json.get("frames", [])
+                    ]
+                }, f, indent=2)
+
+            # JsonAnalistでの分析実行
+            analysis_result = analyze_json(temp_path, user_height=self.user_height, verbose=False)
+            
+            return {
+                "pose_json": pose_json,
+                "analyst_result": analysis_result
+            }
+
+        except Exception as e:
+            self.logger.log_error_details(error=e, agent=self.agent_name)
+            return {
+                "pose_json": pose_json,
+                "analyst_result": {},
+                "error": str(e)
+            }
 
     async def _compare_swings(
         self,

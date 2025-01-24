@@ -5,14 +5,14 @@ from typing import Any, Dict, Optional
 import os
 
 class SystemLogger:
-    """システムのログ管理を担当するクラス"""
-    
     def __init__(self, log_dir: str = "logs"):
         self.log_dir = log_dir
         os.makedirs(log_dir, exist_ok=True)
         
         # 基本ロガーの設定
         self.logger = logging.getLogger("SwingCoachSystem")
+        # 既存のハンドラをクリア
+        self.logger.handlers.clear()  
         self.logger.setLevel(logging.INFO)
         
         # ファイルハンドラの設定
