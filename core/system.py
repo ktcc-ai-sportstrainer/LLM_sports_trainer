@@ -117,7 +117,7 @@ class SwingCoachingSystem:
             # 検索クエリ自体はGoalSettingAgentの出力から直接取得せず、文字列として扱う
             search_queries_str = goal_result.get("goal_setting_result", "")
             search_result = await self.agents["search"].run(
-                search_queries=search_queries_str
+                search_requests=search_queries_str
             )
             self.state_manager.update_state("search", {"search_results": search_result})
 

@@ -50,6 +50,9 @@ def main():
     config = load_config()
     system = SwingCoachingSystem(config)
     
+    # InteractiveAgent を CLI モードで初期化
+    system.agents["interactive"].mode = "cli" 
+    
     result = asyncio.run(
         system.run(
             persona_data=basic_info,

@@ -9,6 +9,8 @@ from agents.base import BaseAgent
 from models.internal.conversation import ConversationHistory
 from models.input.persona import Persona
 from models.input.policy import TeachingPolicy
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 
 
 class InteractiveAgent(BaseAgent):
@@ -132,16 +134,17 @@ class InteractiveAgent(BaseAgent):
         ユーザー回答を取得する。
         mode に応じて分岐:
           - mock : テスト用固定文言
-          - cli  : input() で取得
+          - cli  : input() で取得 (非同期対応)
           - streamlit : set_streamlit_callback() で設定されたコールバック呼び出し
         """
         if self.mode == "mock":
             return f"【Mock Response】for: {question}"
 
         elif self.mode == "cli":
-            # 同期的に input() を呼ぶ例
-            # 非同期関数内なので、簡易にはこう書くが実際には run_in_executor() などが必要な場合がある
-            ans = input(f"\nAssistant: {question}\nYou> ")
+            # input() を別のスレッドで実行
+            loop = asyncio.get_event_loop()
+            with ThreadPoolExecutor() as pool:
+                ans = await loop.run_in_executor(pool, input, f"\nAssistant: {question}\nYou> ")
             return ans.strip()
 
         elif self.mode == "streamlit":
