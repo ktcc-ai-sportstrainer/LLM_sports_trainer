@@ -165,7 +165,7 @@ class ModelingAgent(BaseAgent):
         self,
         user_analysis: Dict[str, Any],
         ideal_analysis: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> str:
         """
         2動画のanalysisをLLMに比較させる想定
         """
@@ -175,11 +175,14 @@ class ModelingAgent(BaseAgent):
         )
         response = await self.llm.ainvoke(prompt)
         try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            return {"comparison_text": response.content}
+            # JSONの検証
+            json.loads(response.content)
+            return response.content
+        except json.JSONDecodeError as e:
+            self.logger.log_error_details(error=e, agent=self.agent_name, context={"response_content": response.content})
+            return "比較分析の結果をLLMが生成できませんでした。"
 
-    async def _analyze_single_swing(self, user_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    async def _analyze_single_swing(self, user_analysis: Dict[str, Any]) -> str:
         """
         1動画だけのとき: 一般論比較
         """
@@ -188,9 +191,12 @@ class ModelingAgent(BaseAgent):
         )
         response = await self.llm.ainvoke(prompt)
         try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            return {"general_analysis_text": response.content}
+            # JSONの検証
+            json.loads(response.content)
+            return response.content
+        except json.JSONDecodeError as e:
+            self.logger.log_error_details(error=e, agent=self.agent_name, context={"response_content": response.content})
+            return "一般的な分析の結果をLLMが生成できませんでした。"
 
     def _load_prompts(self) -> Dict[str, str]:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")

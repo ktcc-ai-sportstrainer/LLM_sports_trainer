@@ -1,5 +1,3 @@
-# agents/summarize_agent/agent.py
-
 from typing import Dict, Any, List
 import json
 import os
@@ -23,7 +21,7 @@ class SummarizeAgent(BaseAgent):
         self.action_plan_prompt = ChatPromptTemplate.from_template(self.prompts["action_plan_prompt"])
         self.feedback_prompt = ChatPromptTemplate.from_template(self.prompts["feedback_prompt"])
 
-    async def run(self, analysis: Dict[str, Any], goal: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+    async def run(self, analysis: str, goal: str, plan: str) -> str: # 戻り値を文字列に変更
         """
         analysis: ModelingAgentの出力
         goal: GoalSettingAgentの出力
@@ -34,78 +32,46 @@ class SummarizeAgent(BaseAgent):
             action_plan = await self._generate_action_plan(goal, plan)
             feedback = await self._generate_feedback(analysis, goal)
 
-            final_report = {
-                "summary": summary,
-                "action_plan": action_plan,
-                "feedback_points": feedback
-            }
+            final_report = f"## コーチングレポート\n\n{summary}\n\n## アクションプラン\n\n{action_plan}\n\n## フィードバック\n\n{feedback}"
             return final_report
 
         except Exception as e:
             self.logger.log_error_details(error=e, agent=self.agent_name)
-            return {}
+            return ""
 
-    async def _generate_summary(self, analysis: Dict[str, Any], goal: Dict[str, Any], plan: Dict[str, Any]) -> str:
+    async def _generate_summary(self, analysis: str, goal: str, plan: str) -> str:
         """
         全体サマリーを生成
         """
         response = await self.llm.ainvoke(
             self.summary_prompt.format_messages(
-                analysis=json.dumps(analysis, ensure_ascii=False),
-                goal=json.dumps(goal, ensure_ascii=False),
-                plan=json.dumps(plan, ensure_ascii=False)
+                analysis=analysis,
+                goal=goal,
+                plan=plan
             )
         )
-        try:
-            summary_dict = json.loads(response.content)
-            # 単純に keys, values を繋げて表示例
-            lines = []
-            for category, items in summary_dict.items():
-                lines.append(f"▼{category}")
-                for i in items:
-                    lines.append(f"- {i}")
-            return "\n".join(lines)
-        except json.JSONDecodeError:
-            return response.content
+        return response.content
 
-    async def _generate_action_plan(self, goal: Dict[str, Any], plan: Dict[str, Any]) -> Dict[str, Any]:
+    async def _generate_action_plan(self, goal: str, plan: str) -> str:
         """
         アクションプランの生成（LLMを利用）
         """
         response = await self.llm.ainvoke(
             self.action_plan_prompt.format_messages(
-                goal=json.dumps(goal, ensure_ascii=False),
-                plan=json.dumps(plan, ensure_ascii=False)
+                goal=goal,
+                plan=plan
             )
         )
-        try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            return {"immediate_actions": [], "weekly_schedule": {}, "milestones": [], "raw_text": response.content}
+        return response.content
 
-    async def _generate_feedback(self, analysis: Dict[str, Any], goal: Dict[str, Any]) -> List[Dict[str, str]]:
+    async def _generate_feedback(self, analysis: str, goal: str) -> str:
         """
         追加フィードバック
         """
         response = await self.llm.ainvoke(
             self.feedback_prompt.format_messages(
-                analysis=json.dumps(analysis, ensure_ascii=False),
-                goal=json.dumps(goal, ensure_ascii=False)
+                analysis=analysis,
+                goal=goal
             )
         )
-        try:
-            data = json.loads(response.content)
-            # critical/important/nice_to_have でまとめる例
-            feedback_list = []
-            for category in ["critical", "important", "nice_to_have"]:
-                if category in data:
-                    for item in data[category]:
-                        feedback_list.append({
-                            "priority": category,
-                            "content": item["content"],
-                            "reason": item.get("reason", ""),
-                            "suggestion": item.get("suggestion", "")
-                        })
-            return feedback_list
-        except json.JSONDecodeError:
-            return [{"error": "could not parse feedback", "raw": response.content}]
+        return response.content

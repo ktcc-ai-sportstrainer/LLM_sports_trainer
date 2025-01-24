@@ -278,20 +278,20 @@ class strakezone:
 
 # ********************** 分析関数 *************************
 
-def analyze_json(input_json_path, user_height=170.0, verbose=False):
+def analyze_json(input_json_path, user_height=170, verbose=False):
     """
     JSON(3D座標)を読み込み:
-      frames: [ { frame_index, coordinates: [{joint_name, x,y,z}, ...] }, ... ]
+    frames: [ { frame_index, coordinates: [{joint_name, x,y,z}, ...] }, ... ]
     user_height: ペルソナ情報にある身長（cm）
     verbose: Trueなら旧来のprintデバッグを出す
 
     戻り値: {
-      "idealgravity": [...],
-      "judge": [...],
-      "speed": float,
-      "speed_list": [...],
-      "speed_list_len": int,
-      "max_speed_index": int
+        "idealgravity": [...],
+        "judge": [...],
+        "speed": float,
+        "speed_list": [...],
+        "speed_list_len": int,
+        "max_speed_index": int
     }
     """
     with open(input_json_path, 'r', encoding='utf-8') as f:
@@ -304,7 +304,9 @@ def analyze_json(input_json_path, user_height=170.0, verbose=False):
         coords_list = fr["coordinates"]
         d = {}
         for c in coords_list:
-            d[c["joint_name"]] = (c["x"], c["y"], c["z"])
+            # joint_names に無いキーが来たら無視
+            if c["joint_name"] in joint_names:
+                d[c["joint_name"]] = (c["x"], c["y"], c["z"])
         skeleton_frames.append(d)
 
     total_frames = len(skeleton_frames)

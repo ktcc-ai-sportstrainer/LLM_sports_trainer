@@ -1,5 +1,5 @@
 {
-    "filter_prompt": "以下の検索結果から、{category}カテゴリの{expected_info}に関連する情報を抽出してください。\n\n検索結果:\n{results}\n\n出力形式:\n{\n    \"relevant_info\": [\n        {\n            \"content\": \"抽出した情報\",\n            \"source\": \"情報源\",\n            \"relevance_score\": 1-5\n        }\n    ],\n    \"summary\": \"抽出情報のまとめ\"\n}",
- 
-    "result_analysis_prompt": "検索結果全体を分析し、トレーニング計画に活用できる知見を抽出してください。\n\n検索結果:\n{results}\n\n出力形式:\n{\n    \"training_insights\": [\n        {\n            \"category\": \"カテゴリ\",\n            \"key_points\": [\"重要ポイント\"],\n            \"application\": \"活用方法\"\n        }\n    ],\n    \"recommended_resources\": [\"推奨リソース\"]\n}"
- }
+    "filter_prompt": "以下の検索結果から、{category}カテゴリの{expected_info}に関連する情報を抽出してください。\n\n検索結果:\n{results}\n\n出力はプレーンテキストで出力してください．",
+
+    "result_analysis_prompt": "検索結果全体を分析し、トレーニング計画に活用できる知見を抽出してください。\n\n検索結果:\n{results}\n\n出力はプレーンテキストで出力してください．"
+}

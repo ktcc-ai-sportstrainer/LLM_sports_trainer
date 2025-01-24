@@ -1,25 +1,56 @@
 import streamlit as st
 from config import load_config
 from core.system import SwingCoachingSystem
+from core.logger import SystemLogger
 import os
 import json
 import asyncio
 from agents.interactive_agent.agent import InteractiveAgent
 
+# Streamlit UIのタイトル
+st.title("野球スイングコーチングAI")
+
+# サイドバーの設定
+st.sidebar.header("設定")
+
+# ログ表示エリア（修正）
+log_area = st.sidebar.text_area("Logs", "", height=300)
+
+# ロガーの初期化
+logger = SystemLogger()
+
+def update_log_area():
+    """ログをStreamlitのテキストエリアに表示"""
+    logs_dir = "logs"  # ログディレクトリのパスを指定
+    if os.path.exists(logs_dir):
+        log_files = [f for f in os.listdir(logs_dir) if os.path.isfile(os.path.join(logs_dir, f))]
+        log_files.sort(key=lambda x: os.path.getmtime(os.path.join(logs_dir, x)), reverse=True)
+
+        all_logs_content = ""
+        for log_file in log_files:
+            with open(os.path.join(logs_dir, log_file), "r") as file:
+                all_logs_content += f"--- {log_file} ---\n"
+                all_logs_content += file.read()
+                all_logs_content += "\n\n"
+
+        log_area.text_area("Logs", all_logs_content, height=300)
+    else:
+        log_area.text_area("Logs", "ログディレクトリが存在しません。", height=300)
+
 def get_streamlit_user_answer(question: str) -> str:
     """
     Streamlitでユーザーからの回答を受け取る。
-    ここではシンプルに `st.text_input` を用いる例。
-    実際にはUI上で「次へ」ボタンなどを押さないとループできないなど工夫が必要。
     """
-    st.write(f"### 質問: {question}")
-    user_input = st.text_input("あなたの回答", key=question)  # keyにquestionを使うのは簡易例
-    # Streamlit はリアルタイム対話に少し工夫が必要。ここでは極簡易例として示す。
-    return user_input if user_input else "（未入力）"
+    st.write(f"### {question}")
+    user_input = st.text_input("回答を入力:", key=question)
+    
+    # 無限ループを避けるための簡易的な条件
+    if st.button("回答を送信", key=f"submit_{question}"):
+        return user_input
+    else:
+        return ""
 
-def main():
-    st.title("野球スイングコーチングAI - Streamlit Demo")
-
+async def main():
     # 1. JSON入力
     st.sidebar.header("JSONファイルのアップロード")
     json_file = st.sidebar.file_uploader("ペルソナ情報 JSONファイル", type=["json"])
@@ -34,7 +65,7 @@ def main():
         if not json_file or not user_uploaded_file:
             st.error("JSONファイルと、あなたのスイング動画は必須です。")
             return
-        
+
         # JSON読込
         try:
             input_data = json.load(json_file)
@@ -65,48 +96,54 @@ def main():
             interactive_agent.set_streamlit_callback(get_streamlit_user_answer)
 
         # 非同期実行
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(
-            system.run(
-                persona_data=basic_info,
-                policy_data=coaching_policy,
-                user_video_path=user_temp_path,
-                ideal_video_path=ideal_temp_path
-            )
-        )
+        with st.spinner('スイングを分析中...'):
+            try:
+                result = await system.run(
+                    persona_data=basic_info,
+                    policy_data=coaching_policy,
+                    user_video_path=user_temp_path,
+                    ideal_video_path=ideal_temp_path
+                )
+            except Exception as e:
+                st.error(f"エラーが発生しました: {e}")
+                logger.log_error_details(e, agent="system")
+                update_log_area()
+                return
 
         # 結果表示
         st.subheader("1. Interactive Q&A")
-        conv = result.get("interactive_questions", [])
+        conv = result.get("interactive_result", {}).get("conversation_history", [])
         if conv:
             for c in conv:
-                st.write(f"- {c}")
+                speaker, msg = c
+                st.write(f"- **{speaker.capitalize()}**: {msg}")
         else:
             st.write("No conversation logs found.")
 
         st.subheader("2. Motion Analysis")
-        st.json(result.get("motion_analysis", {}))
+        st.write("### User Analysis")
+        st.json(result.get("motion_analysis", {}).get("user_analysis", {}))
+
+        if "ideal_analysis" in result.get("motion_analysis", {}):
+            st.write("### Ideal Analysis")
+            st.json(result.get("motion_analysis", {}).get("ideal_analysis", {}))
+            st.write("### Comparison")
+            st.write(result.get("motion_analysis", {}).get("comparison", "比較データがありません"))
+        else:
+            st.write("### General Analysis")
+            st.write(result.get("motion_analysis", {}).get("general_analysis", "一般分析データがありません"))
 
         st.subheader("3. Goal Setting")
-        st.json(result.get("goal_setting", {}))
+        st.write(result.get("goal_setting", "目標設定データがありません"))
 
         st.subheader("4. Training Plan")
-        st.json(result.get("training_plan", {}))
+        st.write(result.get("training_plan", "トレーニング計画データがありません"))
 
         st.subheader("5. Search Results")
-        st.json(result.get("search_results", {}))
+        st.write(result.get("search_results", "検索結果データがありません"))
 
         st.subheader("6. Final Summary")
-        fs = result.get("final_summary", {})
-        if "summary" in fs:
-            st.write(fs["summary"])
-
-        # 一時ファイルの後始末
-        if os.path.exists(user_temp_path):
-            os.remove(user_temp_path)
-        if ideal_temp_path and os.path.exists(ideal_temp_path):
-            os.remove(ideal_temp_path)
+        st.write(result.get("final_summary", "最終サマリーデータがありません"))
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

@@ -1,3 +1,4 @@
+# main.py
 from dotenv import load_dotenv
 import argparse
 import json
@@ -25,6 +26,8 @@ def format_for_json(obj):
 def main():
     parser = argparse.ArgumentParser(description="Swing Coaching System CLI")
     # 既存の引数
+    parser.add_argument("--config", type=str, default="config/config.yaml", help="Path to the configuration file")
+    parser.add_argument("--log_dir", type=str, default="logs", help="Directory to save logs")
     parser.add_argument("--json", type=str, required=True, help="Path to the JSON file containing persona data")
     
     # 動画パスの代わりに3D姿勢JSONのパスを受け取るように変更
@@ -58,33 +61,31 @@ def main():
         )
     )
 
-    # 結果表示
+    # 結果表示（必要に応じて整形）
     print("\n--- Interactive Questions & Answers ---")
-    conversation = result.get("interactive_questions", [])
+    conversation = result.get("interactive_result", {}).get("conversation_history", [])
     if conversation:
-        for entry in conversation:
-            print(entry)
+        for speaker, msg in conversation:
+            print(f"{speaker.upper()}: {msg}")
     else:
         print("No conversation logs found...")
 
     print("\n--- Motion Analysis ---")
-    print(json.dumps(result.get("motion_analysis", {}), default=format_for_json, ensure_ascii=False, indent=2))
+    motion_analysis = result.get("motion_analysis", {})
+    print(json.dumps(motion_analysis, indent=2, ensure_ascii=False))
 
     print("\n--- Goal Setting ---")
-    print(json.dumps(result.get("goal_setting", {}), default=format_for_json, ensure_ascii=False, indent=2))
+    print(result.get("goal_setting", "目標設定データがありません"))
 
     print("\n--- Training Plan ---")
-    print(json.dumps(result.get("training_plan", {}), default=format_for_json, ensure_ascii=False, indent=2))
+    print(result.get("training_plan", "トレーニング計画データがありません"))
 
     print("\n--- Search Results ---")
-    print(json.dumps(result.get("search_results", {}), default=format_for_json, ensure_ascii=False, indent=2))
+    print(result.get("search_results", "検索結果データがありません"))
 
     print("\n--- Final Summary ---")
-    fs = result.get("final_summary", {})
-    if "summary" in fs:
-        print(fs["summary"])
+    print(result.get("final_summary", "最終サマリーデータがありません"))
 
     print("\nDone.")
-
 if __name__ == "__main__":
     main()

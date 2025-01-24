@@ -1,5 +1,3 @@
-# agents/search_agent/agent.py
-
 from typing import Any, Dict, List
 import json
 import os
@@ -23,39 +21,38 @@ class SearchAgent(BaseAgent):
         with open(prompt_path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    async def run(self, search_requests: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def run(self, search_requests: str = None) -> str: # 戻り値を文字列に変更
         """
         search_requestsがNoneの場合は空の結果を返す
         """
         if not search_requests:
-            return {"results": {}}
+            return ""
             
-        results_dict = {}
-        for request in search_requests:
-            goal_id = request.get("goal_id", "unknown")
+        results_list = []
+        for request in search_requests.split('\n'):
             single_result = await self._execute_search(request)
-            results_dict[goal_id] = single_result
+            results_list.append(single_result)
 
-        analyzed = await self._analyze_search_results(results_dict)
-        return analyzed
-    
-    async def _execute_search(self, request: Dict[str, Any]) -> Dict[str, Any]:
+        analyzed = await self._analyze_search_results(results_list)
+        return analyzed # 文字列を返す
+
+    async def _execute_search(self, request: str) -> str: # 戻り値を文字列に変更
         """
         requestには {query, category, expected_info, goal_id} 等が入る想定
         """
-        query = request.get("query", "")
+        query = request
         if not query:
-            return {}
+            return ""
 
         # 実際にsearch_toolsを使って検索:
         raw_results = await self.search_tools["google-search"].arun(query)
         # raw_results はテキストかJSON文字列かなどライブラリ次第
         filtered = await self._filter_results(
-            raw_results, request.get("category", ""), request.get("expected_info", "")
+            raw_results, "", ""
         )
         return filtered
 
-    async def _filter_results(self, results: str, category: str, expected_info: str) -> Dict[str, Any]:
+    async def _filter_results(self, results: str, category: str, expected_info: str) -> str: # 戻り値を文字列に変更
         """
         LLMを使い、検索結果をカテゴリや期待情報でフィルタする。
         """
@@ -65,20 +62,13 @@ class SearchAgent(BaseAgent):
             expected_info=expected_info
         )
         response = await self.llm.ainvoke(prompt)
-        try:
-            return json.loads(response.content)
-        except json.JSONDecodeError:
-            return {"relevant_info": [], "summary": response.content}
+        return response.content # 文字列を返す
 
-    async def _analyze_search_results(self, results_dict: Dict[str, Any]) -> Dict[str, Any]:
+    async def _analyze_search_results(self, results_list: List[str]) -> str: # 戻り値を文字列に変更
         """
         検索結果全体を俯瞰して要約するなどの処理
         """
         # result_analysis_promptを使用
-        combined_text = json.dumps(results_dict, ensure_ascii=False)
-        prompt = self.prompts["result_analysis_prompt"].format(results=combined_text)
+        prompt = self.prompts["result_analysis_prompt"].format(results=results_list)
         resp = await self.llm.ainvoke(prompt)
-        try:
-            return json.loads(resp.content)
-        except json.JSONDecodeError:
-            return {"training_insights": [], "recommended_resources": [], "raw_response": resp.content}
+        return resp.content # 文字列を返す
