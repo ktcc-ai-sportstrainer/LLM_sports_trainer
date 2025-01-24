@@ -1,4 +1,3 @@
-# core/state.py
 from typing import Dict, Any, List, Optional, TypedDict
 from datetime import datetime
 from pydantic import BaseModel
@@ -9,7 +8,7 @@ class AgentState(TypedDict):
     user_video_path: Optional[str]
     ideal_video_path: Optional[str]
     conversation: List[Dict[str, str]]
-    motion_analysis: Dict[str, Any]
+    motion_analysis: str # ModelingAgentの出力形式変更に対応
     goals: str
     search_queries: str
     search_results: str
@@ -32,7 +31,7 @@ def create_initial_state(
 
         # エージェントの出力（初期状態）
         "conversation": [],
-        "motion_analysis": {},
+        "motion_analysis": "", # 文字列に変更
         "goals": "",
         "search_queries": "",
         "search_results": "",
@@ -109,7 +108,6 @@ class StateManager:
             return {
                 "goal": self.state["goals"],
                 "motion_analysis": self.state["motion_analysis"],
-                "search_results": self.state["search_results"]
             }
         elif agent_name == "summarize":
             return {

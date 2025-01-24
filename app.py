@@ -120,18 +120,9 @@ async def main():
         else:
             st.write("No conversation logs found.")
 
+        # 変更後
         st.subheader("2. Motion Analysis")
-        st.write("### User Analysis")
-        st.json(result.get("motion_analysis", {}).get("user_analysis", {}))
-
-        if "ideal_analysis" in result.get("motion_analysis", {}):
-            st.write("### Ideal Analysis")
-            st.json(result.get("motion_analysis", {}).get("ideal_analysis", {}))
-            st.write("### Comparison")
-            st.write(result.get("motion_analysis", {}).get("comparison", "比較データがありません"))
-        else:
-            st.write("### General Analysis")
-            st.write(result.get("motion_analysis", {}).get("general_analysis", "一般分析データがありません"))
+        st.write(result.get("motion_analysis", "分析結果がありません"))
 
         st.subheader("3. Goal Setting")
         st.write(result.get("goal_setting", "目標設定データがありません"))

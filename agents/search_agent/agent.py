@@ -36,17 +36,17 @@ class SearchAgent(BaseAgent):
         analyzed = await self._analyze_search_results(results_list)
         return analyzed # 文字列を返す
 
-    async def _execute_search(self, request: str) -> str: # 戻り値を文字列に変更
+    async def _execute_search(self, request: str) -> str:
         """
-        requestには {query, category, expected_info, goal_id} 等が入る想定
+        requestには {query, category, expected_info} 等が入る想定
         """
         query = request
         if not query:
             return ""
 
-        # 実際にsearch_toolsを使って検索:
-        raw_results = await self.search_tools["google-search"].arun(query)
-        # raw_results はテキストかJSON文字列かなどライブラリ次第
+        # search_toolsをリストとして扱い、最初の要素を使用
+        search_tool = self.search_tools[0]
+        raw_results = await search_tool.ainvoke(input={"query": query}) # queryに変更
         filtered = await self._filter_results(
             raw_results, "", ""
         )

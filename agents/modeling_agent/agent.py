@@ -8,7 +8,7 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from agents.base import BaseAgent
 from agents.modeling_agent.metrics.swing import SwingMetrics
-from MotionAGFormer.JsonAnalist import analyze_json  
+from MotionAGFormer.JsonAnalist import analyze_json
 
 class ModelingAgent(BaseAgent):
     def __init__(self, llm: ChatOpenAI, user_height: float = 170.0):
@@ -29,40 +29,38 @@ class ModelingAgent(BaseAgent):
             if user_pose_json:
                 # JSONから直接読み込み
                 with open(user_pose_json, 'r') as f:
-                    user_analysis = await self._analyze_swing(json.load(f), "user")
+                    user_pose_data = json.load(f)
+                    user_analysis_text = await self._analyze_swing(user_pose_data, "user")
             elif user_video_path:
                 # 動画から3D姿勢推定（従来の処理）
                 user_pose_data = await self._estimate_3d_pose(user_video_path, "user_3d.json")
-                user_analysis = await self._analyze_swing(user_pose_data, "user")
+                user_analysis_text = await self._analyze_swing(user_pose_data, "user")
             else:
                 raise ValueError("Either user_video_path or user_pose_json must be provided")
 
             # 理想スイングの分析（ある場合）
-            ideal_analysis = None
+            ideal_analysis_text = "" # 初期値を空文字列に変更
             if ideal_pose_json:
                 with open(ideal_pose_json, 'r') as f:
-                    ideal_analysis = await self._analyze_swing(json.load(f), "ideal")
+                    ideal_pose_data = json.load(f)
+                    ideal_analysis_text = await self._analyze_swing(ideal_pose_data, "ideal")
             elif ideal_video_path:
                 ideal_pose_data = await self._estimate_3d_pose(ideal_video_path, "ideal_3d.json")
-                ideal_analysis = await self._analyze_swing(ideal_pose_data, "ideal")
+                ideal_analysis_text = await self._analyze_swing(ideal_pose_data, "ideal")
 
-            result = {
-                "user_analysis": user_analysis
-            }
-
-            if ideal_analysis:
-                result["ideal_analysis"] = ideal_analysis
-                comparison = await self._compare_swings(user_analysis, ideal_analysis)
-                result["comparison"] = comparison
+            if ideal_analysis_text:
+                # 比較分析
+                comparison_text = await self._compare_swings(user_analysis_text, ideal_analysis_text)
+                return {"analysis_result": comparison_text} # 文字列を返す
             else:
-                general_analysis = await self._analyze_single_swing(user_analysis)
-                result["general_analysis"] = general_analysis
-
-            return result
+                # 一般論に基づく分析
+                general_analysis_text = await self._analyze_single_swing(user_analysis_text)
+                return {"analysis_result": general_analysis_text} # 文字列を返す
 
         except Exception as e:
             self.logger.log_error_details(error=e, agent=self.agent_name)
-            return {}
+            return {"analysis_result": f"エラーが発生しました: {e}"} # エラーメッセージを返す
+
         
     async def _estimate_3d_pose(self, video_path: str, out_json_name: str) -> Dict[str, Any]:
         """
@@ -112,7 +110,7 @@ class ModelingAgent(BaseAgent):
 
         return data_dict
 
-    async def _analyze_swing(self, pose_json: Dict[str, Any], label: str) -> Dict[str, Any]:
+    async def _analyze_swing(self, pose_json: Dict[str, Any], label: str) -> str: # 戻り値を文字列に変更
         """pose_jsonからjoint_namesとの整合性を取る処理を追加"""
         temp_path = f"./run/temp_{label}_3d_input.json"
         
@@ -147,56 +145,53 @@ class ModelingAgent(BaseAgent):
 
             # JsonAnalistでの分析実行
             analysis_result = analyze_json(temp_path, user_height=self.user_height, verbose=False)
-            
-            return {
-                "pose_json": pose_json,
-                "analyst_result": analysis_result
-            }
+
+            # 解析結果を文字列化して返す
+            return json.dumps(analysis_result, indent=2, ensure_ascii=False)
 
         except Exception as e:
             self.logger.log_error_details(error=e, agent=self.agent_name)
-            return {
-                "pose_json": pose_json,
-                "analyst_result": {},
-                "error": str(e)
-            }
+            return f"エラーが発生しました: {e}"
 
-    async def _compare_swings(
-        self,
-        user_analysis: Dict[str, Any],
-        ideal_analysis: Dict[str, Any]
-    ) -> str:
+    def _get_metrics_description(self) -> str:
         """
-        2動画のanalysisをLLMに比較させる想定
+        analyze_json関数で計算される指標の説明を返す
         """
+        description = """
+        - idealgravity: 各フレームにおける全身の重心座標のリスト
+        - judge: 各フレームでバットがストライクゾーン内にあるかどうかの判定結果（真偽値）のリスト
+        - speed: インパクト時の推定バットスピード（最大値）
+        - speed_list: 各フレームにおける推定バットスピードのリスト
+        - speed_list_len: speed_listの長さ（フレーム数）
+        - max_speed_index: バットスピードが最大となるフレームのインデックス
+        """
+        return description
+
+    async def _compare_swings(self, user_analysis: str, ideal_analysis: str) -> str:
+        """
+        2動画のanalysisをLLMに比較させる
+        """
+        metrics_description = self._get_metrics_description()
         prompt = self.prompts["comparison_prompt"].format(
-            user_analysis=json.dumps(user_analysis, ensure_ascii=False),
-            ideal_analysis=json.dumps(ideal_analysis, ensure_ascii=False)
+            user_analysis=user_analysis,
+            ideal_analysis=ideal_analysis,
+            metrics_description=metrics_description # 指標の説明を追加
         )
         response = await self.llm.ainvoke(prompt)
-        try:
-            # JSONの検証
-            json.loads(response.content)
-            return response.content
-        except json.JSONDecodeError as e:
-            self.logger.log_error_details(error=e, agent=self.agent_name, context={"response_content": response.content})
-            return "比較分析の結果をLLMが生成できませんでした。"
+        return response.content
 
-    async def _analyze_single_swing(self, user_analysis: Dict[str, Any]) -> str:
+
+    async def _analyze_single_swing(self, user_analysis: str) -> str:
         """
         1動画だけのとき: 一般論比較
         """
+        metrics_description = self._get_metrics_description()
         prompt = self.prompts["single_swing_analysis_prompt"].format(
-            swing_analysis=json.dumps(user_analysis, ensure_ascii=False)
+            swing_analysis=user_analysis,
+            metrics_description=metrics_description # 指標の説明を追加
         )
         response = await self.llm.ainvoke(prompt)
-        try:
-            # JSONの検証
-            json.loads(response.content)
-            return response.content
-        except json.JSONDecodeError as e:
-            self.logger.log_error_details(error=e, agent=self.agent_name, context={"response_content": response.content})
-            return "一般的な分析の結果をLLMが生成できませんでした。"
+        return response.content
 
     def _load_prompts(self) -> Dict[str, str]:
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")

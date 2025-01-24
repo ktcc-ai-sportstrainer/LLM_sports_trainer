@@ -1,4 +1,4 @@
 {
     "task_generation_prompt": "目標と収集した情報から具体的なトレーニングタスクを生成してください。\n\n目標:\n{goals}\n\n分析結果:\n{analysis}\n\n収集情報:\n{search_results}\n\n出力はプレーンテキストで出力してください．",
-    "search_queries_prompt": "以下の目標と分析結果から、具体的な練習メニューを調べるための検索クエリを5つ生成してください。\n\n目標:\n{goals}\n\n分析結果:\n{analysis}\n\n 出力はプレーンテキストで出力してください．"
+    "search_queries_prompt": "以下の目標と分析結果から、具体的な練習メニューを調べるための検索クエリを生成してください。\n\n目標:\n{goals}\n\n分析結果:\n{analysis}\n\n 出力はクエリのみを出力してください．"
 }

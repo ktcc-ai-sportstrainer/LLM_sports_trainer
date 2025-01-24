@@ -1,3 +1,4 @@
+# agents/summarize_agent/agent.py
 from typing import Dict, Any, List
 import json
 import os
@@ -17,9 +18,9 @@ class SummarizeAgent(BaseAgent):
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
         with open(prompt_path, "r", encoding="utf-8") as f:
             self.prompts = json.load(f)
-        self.summary_prompt = ChatPromptTemplate.from_template(self.prompts["summary_prompt"])
-        self.action_plan_prompt = ChatPromptTemplate.from_template(self.prompts["action_plan_prompt"])
-        self.feedback_prompt = ChatPromptTemplate.from_template(self.prompts["feedback_prompt"])
+        self.summary_prompt = self.prompts["summary_prompt"]
+        self.action_plan_prompt = self.prompts["action_plan_prompt"]
+        self.feedback_prompt = self.prompts["feedback_prompt"]
 
     async def run(self, analysis: str, goal: str, plan: str) -> str: # 戻り値を文字列に変更
         """
@@ -44,7 +45,7 @@ class SummarizeAgent(BaseAgent):
         全体サマリーを生成
         """
         response = await self.llm.ainvoke(
-            self.summary_prompt.format_messages(
+            self.summary_prompt.format(
                 analysis=analysis,
                 goal=goal,
                 plan=plan
@@ -57,7 +58,7 @@ class SummarizeAgent(BaseAgent):
         アクションプランの生成（LLMを利用）
         """
         response = await self.llm.ainvoke(
-            self.action_plan_prompt.format_messages(
+            self.action_plan_prompt.format(
                 goal=goal,
                 plan=plan
             )
@@ -69,7 +70,7 @@ class SummarizeAgent(BaseAgent):
         追加フィードバック
         """
         response = await self.llm.ainvoke(
-            self.feedback_prompt.format_messages(
+            self.feedback_prompt.format(
                 analysis=analysis,
                 goal=goal
             )

@@ -74,8 +74,7 @@ def main():
         print("No conversation logs found...")
 
     print("\n--- Motion Analysis ---")
-    motion_analysis = result.get("motion_analysis", {})
-    print(json.dumps(motion_analysis, indent=2, ensure_ascii=False))
+    print(result.get("motion_analysis", "分析結果がありません"))
 
     print("\n--- Goal Setting ---")
     print(result.get("goal_setting", "目標設定データがありません"))

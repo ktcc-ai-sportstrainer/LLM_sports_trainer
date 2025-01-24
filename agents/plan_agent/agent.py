@@ -56,7 +56,6 @@ class PlanAgent(BaseAgent):
         response = await self.llm.ainvoke(prompt)
         return response.content # 文字列を返す
 
-
     async def _create_plan(self, goal: str, motion_analysis: str, search_results: str) -> str: # 戻り値を文字列に変更
         """
         検索結果と目標からトレーニングプランをLLMで生成
