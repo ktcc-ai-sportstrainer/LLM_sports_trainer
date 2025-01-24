@@ -21,8 +21,8 @@ from lib.hrnet.lib.utils.transforms import *
 from lib.hrnet.lib.utils.inference import get_final_preds
 from lib.hrnet.lib.models import pose_hrnet
 
-cfg_dir = 'demo/lib/hrnet/experiments/'
-model_dir = 'demo/lib/checkpoint/'
+cfg_dir = 'MotionAGFormer/run/lib/hrnet/experiments/'
+model_dir = 'MotionAGFormer/run/lib/checkpoint/'
 
 # Loading human detector model
 from lib.yolov3.human_detector import load_model as yolo_model

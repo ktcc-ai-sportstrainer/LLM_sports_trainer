@@ -14,7 +14,7 @@ import json
 
 sys.path.append(os.getcwd())
 from lib.utils import normalize_screen_coordinates, camera_to_world
-from ..model.MotionAGFormer import MotionAGFormer
+from MotionAGFormer.model.MotionAGFormer import MotionAGFormer
 
 import matplotlib
 import matplotlib.pyplot as plt 
@@ -192,7 +192,7 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
     model = nn.DataParallel(MotionAGFormer(**args)).cuda()
 
     # load pretrained
-    model_path = sorted(glob.glob(os.path.join('checkpoint', 'motionagformer-b-h36m.pth.tr')))[0]
+    model_path = sorted(glob.glob(os.path.join('MotionAGFormer/checkpoint', 'motionagformer-b-h36m.pth.tr')))[0]
     pre_dict = torch.load(model_path)
     model.load_state_dict(pre_dict['model'], strict=True)
 

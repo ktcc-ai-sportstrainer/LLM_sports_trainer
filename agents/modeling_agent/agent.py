@@ -1,6 +1,4 @@
-# agents/modeling_agent/agent.py
-
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 import json
 import os
 import asyncio
@@ -13,42 +11,50 @@ from agents.modeling_agent.metrics.swing import SwingMetrics
 from MotionAGFormer.JsonAnalist import analyze_json  
 
 class ModelingAgent(BaseAgent):
-    """
-    3D姿勢推定とスイング分析を行うエージェント。
-    1. user_video_pathを渡される
-    2. vis.pyを呼び出して 3d_result.json を取得
-    3. さらに jsonanalitst.py(analyze_json) を使って重心やバット速度等も計算
-    4. LLMを使った言語化を行い、最終的に { user_analysis, ideal_analysis, comparison, ... } を出力
-    """
-
     def __init__(self, llm: ChatOpenAI, user_height: float = 170.0):
-        """
-        user_height: ペルソナ情報の "height" (cm) を取得してコンストラクタへ渡す例
-        """
         super().__init__(llm)
         self.swing_metrics = SwingMetrics()
         self.prompts = self._load_prompts()
         self.user_height = user_height
 
-    async def run(self, user_video_path: str, ideal_video_path: str = None) -> Dict[str, Any]:
-        result = {}
+    async def run(
+        self,
+        user_video_path: Optional[str] = None,
+        ideal_video_path: Optional[str] = None,
+        user_pose_json: Optional[str] = None,
+        ideal_pose_json: Optional[str] = None
+    ) -> Dict[str, Any]:
         try:
-            # 1) ユーザー動画
-            user_pose_json = await self._estimate_3d_pose(user_video_path, "user_3d.json")
-            user_analysis = await self._analyze_swing(user_pose_json, "user")
-            result["user_analysis"] = user_analysis
+            # ユーザーのスイング分析
+            if user_pose_json:
+                # JSONから直接読み込み
+                with open(user_pose_json, 'r') as f:
+                    user_analysis = await self._analyze_swing(json.load(f), "user")
+            elif user_video_path:
+                # 動画から3D姿勢推定（従来の処理）
+                user_pose_data = await self._estimate_3d_pose(user_video_path, "user_3d.json")
+                user_analysis = await self._analyze_swing(user_pose_data, "user")
+            else:
+                raise ValueError("Either user_video_path or user_pose_json must be provided")
 
-            # 2) 理想動画あれば
-            if ideal_video_path:
-                ideal_pose_json = await self._estimate_3d_pose(ideal_video_path, "ideal_3d.json")
-                ideal_analysis = await self._analyze_swing(ideal_pose_json, "ideal")
+            # 理想スイングの分析（ある場合）
+            ideal_analysis = None
+            if ideal_pose_json:
+                with open(ideal_pose_json, 'r') as f:
+                    ideal_analysis = await self._analyze_swing(json.load(f), "ideal")
+            elif ideal_video_path:
+                ideal_pose_data = await self._estimate_3d_pose(ideal_video_path, "ideal_3d.json")
+                ideal_analysis = await self._analyze_swing(ideal_pose_data, "ideal")
+
+            result = {
+                "user_analysis": user_analysis
+            }
+
+            if ideal_analysis:
                 result["ideal_analysis"] = ideal_analysis
-
-                # 比較
                 comparison = await self._compare_swings(user_analysis, ideal_analysis)
                 result["comparison"] = comparison
             else:
-                # 単体分析
                 general_analysis = await self._analyze_single_swing(user_analysis)
                 result["general_analysis"] = general_analysis
 
@@ -57,7 +63,7 @@ class ModelingAgent(BaseAgent):
         except Exception as e:
             self.logger.log_error_details(error=e, agent=self.agent_name)
             return {}
-
+        
     async def _estimate_3d_pose(self, video_path: str, out_json_name: str) -> Dict[str, Any]:
         """
         Subprocessで vis.py を呼び出し、mp4 -> 3d_result.json を生成してもらい、

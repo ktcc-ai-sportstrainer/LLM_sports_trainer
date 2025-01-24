@@ -3,4 +3,5 @@
 *.pyc
 wandb
 checkpoint/*.pth.tr
-demo/output/
+run/output/
+vis_for_bvh.py

@@ -24,42 +24,37 @@ def format_for_json(obj):
 
 def main():
     parser = argparse.ArgumentParser(description="Swing Coaching System CLI")
-    parser.add_argument("--user_video", type=str, required=True, help="Path to user's swing video file")
-    parser.add_argument("--ideal_video", type=str, required=False, help="Path to ideal swing video file")
+    # 既存の引数
     parser.add_argument("--json", type=str, required=True, help="Path to the JSON file containing persona data")
-    parser.add_argument("--interactive_cli", action="store_true", help="Enable interactive CLI mode for user Q&A")
+    
+    # 動画パスの代わりに3D姿勢JSONのパスを受け取るように変更
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--user_video", type=str, help="Path to user's swing video file")
+    group.add_argument("--user_pose_json", type=str, help="Path to user's 3D pose JSON file")
+    
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--ideal_video", type=str, help="Path to ideal swing video file")
+    group.add_argument("--ideal_pose_json", type=str, help="Path to ideal 3D pose JSON file")
 
     args = parser.parse_args()
 
     # JSONファイル読み込み
-    try:
-        input_data = JSONHandler.load_json(args.json)
-        basic_info = input_data.get("basic_info", {})
-        coaching_policy = input_data.get("coaching_policy", {})
-    except FileNotFoundError:
-        print(f"Error: JSON file not found at {args.json}")
-        return
-    except json.JSONDecodeError:
-        print(f"Error: Invalid JSON format in {args.json}")
-        return
+    input_data = JSONHandler.load_json(args.json)
+    basic_info = input_data.get("basic_info", {})
+    coaching_policy = input_data.get("coaching_policy", {})
 
-    # システム初期化
+    # システム初期化と実行
     config = load_config()
     system = SwingCoachingSystem(config)
-
-    # InteractiveAgentの対話モードをCLIにするかどうか
-    if args.interactive_cli:
-        system.agents["interactive"].mode = "cli"
-        # ↑ agent.py内の self.modeを"cli"にするように仕掛けが必要な場合がある
-
-    # 非同期実行
-    loop = asyncio.get_event_loop()
-    result = loop.run_until_complete(
+    
+    result = asyncio.run(
         system.run(
             persona_data=basic_info,
             policy_data=coaching_policy,
             user_video_path=args.user_video,
-            ideal_video_path=args.ideal_video
+            ideal_video_path=args.ideal_video,
+            user_pose_json=args.user_pose_json,
+            ideal_pose_json=args.ideal_pose_json
         )
     )
 
