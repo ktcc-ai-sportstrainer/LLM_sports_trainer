@@ -21,6 +21,12 @@ def run_sync(coro):
     finally:
         loop.close()
 
+# Streamlit UIでユーザーから回答を受け取る関数
+def get_streamlit_user_answer(question: str) -> str:
+    """Streamlit UIでユーザーから回答を受け取る"""
+    user_answer = st.text_input(f"Assistant: {question}", key=f"qa_{hash(question)}")
+    return user_answer
+
 # Streamlit UIのタイトル
 st.title("野球スイングコーチングAI")
 
