@@ -1,9 +1,9 @@
-
 from typing import Dict, Any, List, Optional, Callable
 import json
 import os
 from langchain_openai import ChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
+import streamlit as st
 
 from agents.base import BaseAgent
 from models.internal.conversation import ConversationHistory
@@ -12,33 +12,18 @@ from models.input.policy import TeachingPolicy
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
-
 class InteractiveAgent(BaseAgent):
-    """
-    部員と対話し、ペルソナ情報から得られない追加の課題や目標を掘り下げるエージェント。
-    対話のやり方を以下で切り替え可能:
-      - mode="mock": 質問に対してモック回答を返す
-      - mode="cli":  端末上でinput()を使用
-      - mode="streamlit": StreamlitのUIを想定
-    """
-
     def __init__(self, llm: ChatOpenAI, mode: str = "mock"):
         super().__init__(llm)
         self.current_turn = 0
-        self.max_turns = 3  # 例：3ターン
-        self.mode = mode  # "mock" / "cli" / "streamlit"
+        self.max_turns = 3
+        self.mode = mode
 
         self.conversation_history = ConversationHistory()
         self.prompts = self._load_prompts()
-
-        # Streamlitモードの場合のコールバック関数
         self.streamlit_input_callback: Optional[Callable[[str], str]] = None
 
     def set_streamlit_callback(self, callback: Callable[[str], str]):
-        """
-        Streamlitアプリなどでユーザー入力を取得するための関数を設定
-        callback(question: str) -> user_answer: str
-        """
         self.streamlit_input_callback = callback
 
     def _load_prompts(self) -> Dict[str, str]:
@@ -52,38 +37,56 @@ class InteractiveAgent(BaseAgent):
         policy: TeachingPolicy,
         conversation_history: Optional[List[Any]] = None
     ) -> Dict[str, Any]:
-        """
-        対話を行い、会話ログ + 抽出情報 を返す。
-        """
-        # 既存の会話履歴があれば反映
         if conversation_history:
             self.conversation_history.messages = conversation_history
 
         try:
-            # 1. 初期質問の生成
+            # 質問の生成
             questions = await self._generate_initial_questions(persona, policy)
-
-            # 2. 質疑応答ループ
+            
+            # 各質問に対する処理
             for i, question in enumerate(questions):
                 if self.current_turn >= self.max_turns:
                     break
 
-                self.conversation_history.messages.append(("assistant", question))
-                user_answer = await self._get_user_response(question)
-                self.conversation_history.messages.append(("user", user_answer))
-
-                self.current_turn += 1
-
-            # 3. フォローアップ (例)
-            if self.current_turn < self.max_turns:
-                follow_up_q = await self._generate_follow_up(persona, policy)
-                if follow_up_q:
-                    self.conversation_history.messages.append(("assistant", follow_up_q))
-                    user_answer = await self._get_user_response(follow_up_q)
+                if self.mode == "streamlit":
+                    # Streamlit用の処理
+                    if 'current_question' not in st.session_state:
+                        st.session_state.current_question = 0
+                        
+                    if st.session_state.current_question == i:
+                        response = self.streamlit_input_callback(question)
+                        if response:  # 回答が確定したら
+                            self.conversation_history.messages.append(("assistant", question))
+                            self.conversation_history.messages.append(("user", response))
+                            st.session_state.current_question += 1
+                            self.current_turn += 1
+                else:
+                    # CLI/mock モードの処理
+                    self.conversation_history.messages.append(("assistant", question))
+                    user_answer = await self._get_user_response(question)
                     self.conversation_history.messages.append(("user", user_answer))
                     self.current_turn += 1
 
-            # 4. 会話から洞察を抽出
+            # フォローアップ質問（必要な場合）
+            if self.current_turn < self.max_turns:
+                follow_up_q = await self._generate_follow_up(persona, policy)
+                if follow_up_q:
+                    if self.mode == "streamlit":
+                        if st.session_state.current_question == len(questions):
+                            response = self.streamlit_input_callback(follow_up_q)
+                            if response:
+                                self.conversation_history.messages.append(("assistant", follow_up_q))
+                                self.conversation_history.messages.append(("user", response))
+                                st.session_state.current_question += 1
+                                self.current_turn += 1
+                    else:
+                        self.conversation_history.messages.append(("assistant", follow_up_q))
+                        user_answer = await self._get_user_response(follow_up_q)
+                        self.conversation_history.messages.append(("user", user_answer))
+                        self.current_turn += 1
+
+            # 会話から洞察を抽出
             insights = await self._extract_insights()
 
             return {
@@ -131,17 +134,12 @@ class InteractiveAgent(BaseAgent):
 
     async def _get_user_response(self, question: str) -> str:
         """
-        ユーザー回答を取得する。
-        mode に応じて分岐:
-          - mock : テスト用固定文言
-          - cli  : input() で取得 (非同期対応)
-          - streamlit : set_streamlit_callback() で設定されたコールバック呼び出し
+        モードに応じたユーザー回答の取得
         """
         if self.mode == "mock":
             return f"【Mock Response】for: {question}"
 
         elif self.mode == "cli":
-            # input() を別のスレッドで実行
             loop = asyncio.get_event_loop()
             with ThreadPoolExecutor() as pool:
                 ans = await loop.run_in_executor(pool, input, f"\nAssistant: {question}\nYou> ")
@@ -151,8 +149,6 @@ class InteractiveAgent(BaseAgent):
             if self.streamlit_input_callback is not None:
                 return self.streamlit_input_callback(question)
             else:
-                # コールバックが設定されていない場合のfallback
                 return "【No streamlit callback provided】"
         else:
-            # デフォルトはmock
             return f"【Unrecognized mode: {self.mode} => Mock Response】"

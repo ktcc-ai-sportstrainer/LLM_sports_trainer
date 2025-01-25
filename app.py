@@ -21,11 +21,46 @@ def run_sync(coro):
     finally:
         loop.close()
 
-# Streamlit UIでユーザーから回答を受け取る関数
 def get_streamlit_user_answer(question: str) -> str:
     """Streamlit UIでユーザーから回答を受け取る"""
-    user_answer = st.text_input(f"Assistant: {question}", key=f"qa_{hash(question)}")
-    return user_answer
+    # 会話の状態管理
+    if 'qa_state' not in st.session_state:
+        st.session_state.qa_state = {
+            'answers': {},
+            'current_answer': ''
+        }
+
+    # ユニークなキーを生成
+    question_key = f"qa_{hash(question)}"
+
+    # 入力用のコンテナ
+    input_container = st.container()
+    
+    with input_container:
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            # 過去の回答があればそれを初期値として使用
+            current_answer = st.text_input(
+                f"Assistant: {question}",
+                value=st.session_state.qa_state['answers'].get(question_key, ''),
+                key=f"input_{question_key}"
+            )
+
+        with col2:
+            # 回答確定ボタン
+            if st.button("回答を確定", key=f"submit_{question_key}"):
+                st.session_state.qa_state['answers'][question_key] = current_answer
+                return current_answer
+
+    # 会話履歴の表示
+    if st.session_state.qa_state['answers']:
+        st.write("これまでの回答:")
+        for q, a in st.session_state.qa_state['answers'].items():
+            st.text(f"Q: {q}\nA: {a}\n")
+
+    # 未確定の場合は空文字を返す
+    return ""
 
 # Streamlit UIのタイトル
 st.title("野球スイングコーチングAI")
@@ -157,11 +192,16 @@ if st.button("Step 1: 3D姿勢推定を実行"):
             st.stop()
 
 # Step 2: コーチング分析
+# InteractiveAgentの実行部分も修正
 if st.button("Step 2: コーチング分析を実行", 
             disabled=not st.session_state.get('pose_estimation_completed', False)):
     
     with st.spinner('コーチング分析を実行中...'):
         try:
+            # プログレスバーの設定
+            progress_bar = st.progress(0)
+            status_text = st.empty()
+            
             config = load_config.load_config()
             system = SwingCoachingSystem(config)
             
@@ -170,7 +210,10 @@ if st.button("Step 2: コーチング分析を実行",
             if isinstance(interactive_agent, InteractiveAgent):
                 interactive_agent.mode = "streamlit"
                 interactive_agent.set_streamlit_callback(get_streamlit_user_answer)
-
+            
+            # 実行状態の表示用コンテナ
+            execution_container = st.container()
+            
             # 非同期処理を同期的に実行
             result = run_sync(system.run(
                 persona_data=basic_info,
@@ -179,6 +222,9 @@ if st.button("Step 2: コーチング分析を実行",
                 ideal_pose_json=st.session_state.get('ideal_json_path')
             ))
 
+            # プログレスバーを完了に
+            progress_bar.progress(100)
+            
             # 結果の表示
             st.success("コーチング分析が完了しました！")
             
