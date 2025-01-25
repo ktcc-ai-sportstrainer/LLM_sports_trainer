@@ -63,50 +63,47 @@ class ModelingAgent(BaseAgent):
 
         
     async def _estimate_3d_pose(self, video_path: str, out_json_name: str) -> Dict[str, Any]:
-        """
-        Subprocessで vis.py を呼び出し、mp4 -> 3d_result.json を生成してもらい、
-        そのJSONをdictに読み込んで返す。
-        """
-        output_dir = "./run/output_temp"  # 適宜
+        output_dir = "./run/output_temp"
         os.makedirs(output_dir, exist_ok=True)
-
-        # out_json名をフルパス化
         out_json_path = os.path.join(output_dir, out_json_name)
 
-        # subprocess で実行
+        # 引数を削減
         cmd = [
             "python", 
             "MotionAGFormer/run/vis.py",
-            "--video", video_path,
-            "--out_json", out_json_name
+            "--video", video_path
         ]
         self.logger.log_info(f"Running vis.py cmd: {cmd}")
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            cwd=".",  # カレントディレクトリ
+            cwd=".",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
 
-        if process.returncode != 0:
-            err_msg = stderr.decode()
-            raise RuntimeError(f"vis.py failed: {err_msg}")
-
-        # vis.py が標準出力に最終JSONをprintしているはず
+        # デバッグ用ログ追加
         stdout_str = stdout.decode()
-        try:
-            data_dict = json.loads(stdout_str)
-        except json.JSONDecodeError:
-            data_dict = {}
+        stderr_str = stderr.decode()
 
-        # もしファイルからも読みたいなら
-        if os.path.exists(out_json_path):
-            with open(out_json_path, "r", encoding="utf-8") as f:
-                file_data = json.load(f)
-                # file_data が stdout で受け取った data_dict と同じ想定
-                data_dict = file_data
+        try:
+            # 最初の`{`から最後の`}`までを抽出
+            json_start = stdout_str.find('{')
+            json_end = stdout_str.rfind('}') + 1
+            if json_start >= 0 and json_end > 0:
+                json_str = stdout_str[json_start:json_end]
+                data_dict = json.loads(json_str)
+            else:
+                data_dict = {}
+        except json.JSONDecodeError as e:
+            self.logger.log_error(f"JSON decode error: {e}")
+            data_dict = {}
+        
+        output_dir = "./run/output_temp"
+        json_path = os.path.join(output_dir, out_json_name)
+        with open(json_path, 'w') as f:
+            json.dump(data_dict, f, indent=2)
 
         return data_dict
 

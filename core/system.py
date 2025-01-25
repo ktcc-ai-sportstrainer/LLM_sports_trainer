@@ -27,7 +27,7 @@ class SwingCoachingSystem:
 
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
-            model=config.get("model_name", "gpt-4o"),
+            model=config.get("model_name", "gpt-4o-mini"),
             temperature=0.7
         )
 
