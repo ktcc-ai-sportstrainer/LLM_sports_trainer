@@ -7,7 +7,6 @@ MotionAGFormer/run/video/
 venv/
 data/
 logs/
-logs/*
 vis_for_bvh.py
 vis_old.py
 JsonAnalist_original.py
