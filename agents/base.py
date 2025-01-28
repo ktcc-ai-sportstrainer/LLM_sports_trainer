@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional, Tuple, TypeVar
 
 from langchain_openai import ChatOpenAI
 from models.output.agent_output import AgentOutput
-from core.logger import SystemLogger
+from core.base.logger import SystemLogger
 
 
 class BaseAgent(ABC):

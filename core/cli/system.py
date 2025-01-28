@@ -1,8 +1,7 @@
-# core/system.py
 from typing import Dict, Any, Optional
 import os
-from langchain_openai import ChatOpenAI
 
+from langchain_openai import ChatOpenAI
 from agents import (
     InteractiveAgent,
     ModelingAgent,
@@ -11,9 +10,8 @@ from agents import (
     SearchAgent,
     SummarizeAgent
 )
-from core.logger import SystemLogger
-from core.state import StateManager, create_initial_state
-from utils.json_handler import JSONHandler
+from core.base.logger import SystemLogger
+from core.base.state import create_initial_state, SystemState
 
 class SwingCoachingSystem:
     def __init__(self, config: Dict[str, Any]):
@@ -27,23 +25,22 @@ class SwingCoachingSystem:
 
         self.llm = ChatOpenAI(
             openai_api_key=openai_api_key,
-            model=config.get("model_name", "gpt-4o-mini"),
+            model=config.get("model_name", "gpt-4"),
             temperature=0.7
         )
 
-        # エージェントの初期化（順序を考慮）
+        # エージェントの初期化
         self.agents = {
-            "interactive": InteractiveAgent(self.llm),
+            "interactive": InteractiveAgent(self.llm, mode="cli"),
             "modeling": ModelingAgent(self.llm),
             "goal_setting": GoalSettingAgent(self.llm),
-            "search": SearchAgent(self.llm),  # SearchAgentを先に初期化
+            "search": SearchAgent(self.llm),
+            "plan": None,  # SearchAgentに依存するので後で初期化
+            "summarize": SummarizeAgent(self.llm)
         }
         
-        # PlanAgentはSearchAgentに依存するので後で初期化
+        # PlanAgentの初期化
         self.agents["plan"] = PlanAgent(self.llm, self.agents["search"])
-        
-        # SummarizeAgentの初期化
-        self.agents["summarize"] = SummarizeAgent(self.llm)
 
     async def run(
         self,
@@ -54,9 +51,16 @@ class SwingCoachingSystem:
         user_pose_json: Optional[str] = None,
         ideal_pose_json: Optional[str] = None
     ) -> Dict[str, Any]:
-        # StateManagerの初期化をtryの外に移動
-        initial_state = create_initial_state(persona_data, policy_data, user_video_path, ideal_video_path)
-        self.state_manager = StateManager(initial_state)
+        # 初期状態の作成
+        initial_state = create_initial_state(
+            persona_data, 
+            policy_data, 
+            user_video_path, 
+            ideal_video_path,
+            user_pose_json,
+            ideal_pose_json
+        )
+        state = SystemState(initial_state)
         
         try:
             # 1. ユーザーとの対話
@@ -65,7 +69,7 @@ class SwingCoachingSystem:
                 persona=persona_data,
                 policy=policy_data
             )
-            self.state_manager.update_state("interactive", {"conversation": interactive_result})
+            state.update({"conversation": interactive_result})
 
             # 2. 動作分析
             self.logger.log_info("Starting modeling...", agent="modeling")
@@ -75,42 +79,32 @@ class SwingCoachingSystem:
                 user_pose_json=user_pose_json,
                 ideal_pose_json=ideal_pose_json
             )
-            # 3D姿勢推定結果は保持するが、後続のエージェントには文字列を渡す
             motion_analysis_result = modeling_result.get("analysis_result", "")
-
-            # ModelingAgentの結果を'motion_analysis'キーに格納
-            self.state_manager.update_state("modeling", {
-                "motion_analysis": motion_analysis_result
-            })
-            
+            state.update({"motion_analysis": motion_analysis_result})
 
             # 3. 目標設定
             self.logger.log_info("Setting goals...", agent="goal_setting")
             conversation_insights = interactive_result.get("interactive_insights", [])
-
             goal_result = await self.agents["goal_setting"].run(
                 persona=persona_data,
                 policy=policy_data,
                 conversation_insights=conversation_insights,
                 motion_analysis=motion_analysis_result
             )
-            self.state_manager.update_state("goal_setting", {"goals": goal_result.get("goal_setting_result", "")})
+            state.update({"goals": goal_result.get("goal_setting_result", "")})
 
-            # 4. トレーニングプランの作成
+            # 4. トレーニングプラン作成
             self.logger.log_info("Creating training plan...", agent="plan")
             plan_result = await self.agents["plan"].run(
                 goal=goal_result.get("goal_setting_result", ""),
-                motion_analysis=motion_analysis_result,
+                motion_analysis=motion_analysis_result
             )
-            self.state_manager.update_state("plan", {"plan": plan_result})
+            state.update({"plan": plan_result})
 
             # 5. 関連情報の検索
             self.logger.log_info("Searching relevant information...", agent="search")
-            search_queries = plan_result # ここでplan_resultを使用
-            search_result = await self.agents["search"].run(
-                search_requests=search_queries
-            )
-            self.state_manager.update_state("search", {"search_results": search_result})
+            search_result = await self.agents["search"].run(plan_result)
+            state.update({"search_results": search_result})
 
             # 6. 最終サマリーの生成
             self.logger.log_info("Generating final summary...", agent="summarize")
@@ -119,16 +113,9 @@ class SwingCoachingSystem:
                 goal=goal_result.get("goal_setting_result", ""),
                 plan=plan_result
             )
-            self.state_manager.update_state("summarize", {"summary": final_summary})
+            state.update({"summary": final_summary})
 
-            # 最終サマリーをテキストファイルに保存
-            self.logger.log_info("Saving final summary to file...", agent="system")
-            summary_file_path = os.path.join(self.config.get("output_dir", "output"), "final_summary.txt")
-            os.makedirs(os.path.dirname(summary_file_path), exist_ok=True)
-            with open(summary_file_path, "w", encoding="utf-8") as f:
-                f.write(final_summary)
-
-            # 最終的な結果の整形
+            # 7. 結果の整形と返却
             return {
                 "interactive_result": interactive_result,
                 "motion_analysis": motion_analysis_result,
@@ -137,6 +124,44 @@ class SwingCoachingSystem:
                 "training_plan": plan_result,
                 "final_summary": final_summary
             }
+
+        except Exception as e:
+            self.logger.log_error_details(error=e, agent="system")
+            raise
+
+    async def _estimate_3d_pose(self, video_path: str) -> Dict[str, Any]:
+        """3D姿勢推定を実行"""
+        try:
+            cmd = [
+                "python",
+                "MotionAGFormer/run/vis.py",
+                "--video", video_path
+            ]
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            stdout_str = stdout.decode()
+            stderr_str = stderr.decode()
+
+            self.logger.log_debug(f"Pose estimation stdout: {stdout_str}")
+            if stderr_str:
+                self.logger.log_warning(f"Pose estimation stderr: {stderr_str}")
+
+            # JSONデータの抽出
+            try:
+                json_start = stdout_str.find('{')
+                json_end = stdout_str.rfind('}') + 1
+                if json_start >= 0 and json_end > 0:
+                    json_str = stdout_str[json_start:json_end]
+                    return json.loads(json_str)
+                return {}
+            except json.JSONDecodeError as e:
+                self.logger.log_error(f"JSON decode error: {e}")
+                return {}
 
         except Exception as e:
             self.logger.log_error_details(error=e, agent="system")

@@ -11,7 +11,6 @@ class SystemLogger:
         
         # 基本ロガーの設定
         self.logger = logging.getLogger("SwingCoachSystem")
-        # 既存のハンドラをクリア
         self.logger.handlers.clear()  
         self.logger.setLevel(logging.INFO)
         
@@ -31,7 +30,6 @@ class SystemLogger:
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
         
-        # ハンドラの追加
         self.logger.addHandler(file_handler)
         self.logger.addHandler(console_handler)
         
@@ -43,7 +41,6 @@ class SystemLogger:
         agent_logger = logging.getLogger(f"SwingCoachSystem.{agent_name}")
         agent_logger.setLevel(logging.DEBUG)
         
-        # エージェント固有のログファイル
         log_file = os.path.join(self.log_dir, f"{agent_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log")
         handler = logging.FileHandler(log_file)
         handler.setLevel(logging.DEBUG)
@@ -124,25 +121,3 @@ class SystemLogger:
         if agent and agent in self.agent_loggers:
             self.agent_loggers[agent].error(f"Error details:\n{error_log}")
         self.logger.error(f"Error details:\n{error_log}")
-
-    def export_logs(self, output_dir: Optional[str] = None) -> Dict[str, str]:
-        """全ログファイルをエクスポート"""
-        if output_dir is None:
-            output_dir = self.log_dir
-        
-        log_files = {}
-        
-        # システムログ
-        system_logs = [f for f in os.listdir(self.log_dir) if f.startswith("system_")]
-        if system_logs:
-            latest_system_log = max(system_logs)
-            log_files["system"] = os.path.join(self.log_dir, latest_system_log)
-        
-        # エージェントログ
-        for agent in self.agent_loggers:
-            agent_logs = [f for f in os.listdir(self.log_dir) if f.startswith(f"{agent}_")]
-            if agent_logs:
-                latest_agent_log = max(agent_logs)
-                log_files[agent] = os.path.join(self.log_dir, latest_agent_log)
-        
-        return log_files

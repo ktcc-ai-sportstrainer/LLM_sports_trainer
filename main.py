@@ -1,4 +1,3 @@
-# main.py
 from dotenv import load_dotenv
 import argparse
 import json
@@ -6,7 +5,7 @@ from datetime import datetime
 import os
 import asyncio
 from config.load_config import load_config
-from core.system import SwingCoachingSystem
+from core.cli.system import SwingCoachingSystem
 from utils.json_handler import JSONHandler
 from langchain_openai import ChatOpenAI
 

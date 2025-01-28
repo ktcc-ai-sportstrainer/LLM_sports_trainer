@@ -18,10 +18,10 @@ class InteractiveAgent(BaseAgent):
         self.current_turn = 0
         self.max_turns = 3
         self.mode = mode
-
         self.conversation_history = ConversationHistory()
         self.prompts = self._load_prompts()
-        self.streamlit_input_callback: Optional[Callable[[str], str]] = None
+        self.streamlit_input_callback = None
+        self.last_response = None
 
     def set_streamlit_callback(self, callback: Callable[[str], str]):
         self.streamlit_input_callback = callback
@@ -44,47 +44,33 @@ class InteractiveAgent(BaseAgent):
             # 質問の生成
             questions = await self._generate_initial_questions(persona, policy)
             
-            # 各質問に対する処理
-            for i, question in enumerate(questions):
-                if self.current_turn >= self.max_turns:
-                    break
-
-                if self.mode == "streamlit":
-                    # Streamlit用の処理
-                    if 'current_question' not in st.session_state:
-                        st.session_state.current_question = 0
-                        
-                    if st.session_state.current_question == i:
+            # Streamlitモードでの処理を改善
+            if self.mode == "streamlit":
+                for question in questions:
+                    if self.current_turn >= self.max_turns:
+                        break
+                    
+                    response = None
+                    if self.streamlit_input_callback:
                         response = self.streamlit_input_callback(question)
-                        if response:  # 回答が確定したら
-                            self.conversation_history.messages.append(("assistant", question))
-                            self.conversation_history.messages.append(("user", response))
-                            st.session_state.current_question += 1
-                            self.current_turn += 1
-                else:
-                    # CLI/mock モードの処理
-                    self.conversation_history.messages.append(("assistant", question))
-                    user_answer = await self._get_user_response(question)
-                    self.conversation_history.messages.append(("user", user_answer))
-                    self.current_turn += 1
-
-            # フォローアップ質問（必要な場合）
-            if self.current_turn < self.max_turns:
-                follow_up_q = await self._generate_follow_up(persona, policy)
-                if follow_up_q:
-                    if self.mode == "streamlit":
-                        if st.session_state.current_question == len(questions):
-                            response = self.streamlit_input_callback(follow_up_q)
-                            if response:
-                                self.conversation_history.messages.append(("assistant", follow_up_q))
-                                self.conversation_history.messages.append(("user", response))
-                                st.session_state.current_question += 1
-                                self.current_turn += 1
-                    else:
-                        self.conversation_history.messages.append(("assistant", follow_up_q))
-                        user_answer = await self._get_user_response(follow_up_q)
-                        self.conversation_history.messages.append(("user", user_answer))
+                        
+                    if response:  # 有効な応答がある場合のみ進める
+                        self.conversation_history.messages.append(("assistant", question))
+                        self.conversation_history.messages.append(("user", response))
+                        self.last_response = response  # 応答を保存
                         self.current_turn += 1
+
+            # フォローアップ質問の生成（必要な場合）
+            if self.current_turn < self.max_turns:
+                follow_up = await self._generate_follow_up(persona, policy)
+                if follow_up:
+                    if self.mode == "streamlit":
+                        response = self.streamlit_input_callback(follow_up)
+                        if response:
+                            self.conversation_history.messages.append(("assistant", follow_up))
+                            self.conversation_history.messages.append(("user", response))
+                            self.last_response = response  # 応答を保存
+                            self.current_turn += 1
 
             # 会話から洞察を抽出
             insights = await self._extract_insights()
@@ -96,7 +82,11 @@ class InteractiveAgent(BaseAgent):
 
         except Exception as e:
             self.logger.log_error_details(error=e, agent=self.agent_name)
-            return {}
+            # エラー時でも最低限の情報を返す
+            return {
+                "conversation_history": self.conversation_history.messages,
+                "interactive_insights": []
+            }
 
     async def _generate_initial_questions(self, persona: Persona, policy: TeachingPolicy) -> List[str]:
         prompt = self.prompts["initial_questions_prompt"].format(
