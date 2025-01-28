@@ -9,7 +9,9 @@ import asyncio
 import subprocess
 import time
 from datetime import datetime
-from agents.interactive_agent.agent import InteractiveAgent
+# ▼ 変更: interactive_agentからの入力コールバック関数は不要になったので削除
+# from agents.interactive_agent.agent import InteractiveAgent
+
 from dotenv import load_dotenv
 
 # .envファイルを確実に読み込む
@@ -21,7 +23,6 @@ if 'initialization_done' not in st.session_state:
     st.session_state.update({
         'pose_estimation_completed': False,
         'conversation_history': [],
-        'current_question': {},
         'analysis_results': None,
         'processing_step': None,
         'error_state': None,
@@ -36,26 +37,6 @@ def run_sync(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
-
-def get_streamlit_user_answer(question: str) -> str:
-    """Streamlit UIでユーザーから回答を受け取る"""
-    st.write("### 質問:")
-    st.write(question)
-    
-    # 回答入力欄
-    answer = st.text_input("あなたの回答:", key=f"input_{hash(question)}")
-    
-    # 確定ボタン
-    submit_button = st.button("回答を確定", key=f"submit_{hash(question)}")
-    
-    if submit_button and answer.strip():
-        # 会話履歴に追加
-        if 'conversation_history' not in st.session_state:
-            st.session_state.conversation_history = []
-        st.session_state.conversation_history.append((question, answer.strip()))
-        return answer.strip()
-    
-    return ""
 
 def save_temp_file(uploaded_file, prefix):
     """一時ファイルを保存し、パスを返す"""
@@ -72,9 +53,6 @@ def save_temp_file(uploaded_file, prefix):
 
 def cleanup():
     """リソースのクリーンアップ"""
-    if 'system' in locals():
-        system.cleanup()
-    
     temp_dir = "temp_files"
     if os.path.exists(temp_dir):
         for file in os.listdir(temp_dir):
@@ -160,11 +138,7 @@ def main():
     # システムの初期化
     config = load_config()
     system = WebUISwingCoachingSystem(config)
-    system.interactive_enabled = interactive_mode
-
-    # InteractiveAgentのコールバック設定
-    if interactive_mode:
-        system.agents["interactive"].set_streamlit_callback(get_streamlit_user_answer)
+    system.interactive_enabled = interactive_mode  # インタラクティブモードON/OFF切り替え
 
     # メイン画面: スイングデータのアップロード
     st.write("## スイングデータのアップロード")
@@ -229,13 +203,12 @@ def main():
                         system.process_video(user_temp_path)
                     )
                     
-                    # 処理結果の動画表示
-                    st.success("3D姿勢推定が完了しました！")
-                    
                     # 状態の更新
                     st.session_state['user_json_path'] = pose_json_path
                     st.session_state['visualization_path'] = vis_video_path
                     st.session_state['pose_estimation_completed'] = True
+
+                    st.success("3D姿勢推定が完了しました！")
 
                     # 理想動画の処理（存在する場合）
                     if ideal_uploaded_file:
@@ -244,9 +217,10 @@ def main():
                             system.process_video(ideal_temp_path)
                         )
                         
-                        st.success("理想動画の3D姿勢推定が完了しました！")
                         st.session_state['ideal_json_path'] = pose_json_path
                         st.session_state['ideal_visualization_path'] = vis_video_path
+
+                        st.success("理想動画の3D姿勢推定が完了しました！")
 
                     st.info("Step 2のコーチング分析に進むことができます。")
 
@@ -310,6 +284,7 @@ def main():
                     st.write(modeling_result.get("analysis_result", "分析結果がありません"))
 
                 # インタラクティブセッション
+                interactive_result = {}
                 if interactive_mode:
                     status_container.info("🗣️ インタラクティブセッションを開始...")
                     interactive_result = run_sync(system.agents["interactive"].run(
@@ -329,7 +304,7 @@ def main():
                 goal_result = run_sync(system.agents["goal_setting"].run(
                     persona=basic_info,
                     policy=coaching_policy,
-                    conversation_insights=interactive_result.get("interactive_insights", []) if interactive_mode else [],
+                    conversation_insights=interactive_result.get("interactive_insights", []),
                     motion_analysis=modeling_result.get("analysis_result", "")
                 ))
                 with result_container:
@@ -377,8 +352,8 @@ def main():
                 status_container.success("✅ 分析が完了しました！")
                 st.balloons()
 
-                # セッション状態の更新
-                st.session_state.analysis_results = {
+                # セッション状態の更新 (結果をすべてsession_stateに保存)
+                st.session_state['analysis_results'] = {
                     "modeling": modeling_result,
                     "interactive": interactive_result if interactive_mode else None,
                     "goal_setting": goal_result,
@@ -395,6 +370,23 @@ def main():
     # 分析進捗状況の表示
     if st.session_state.get('analysis_results'):
         st.sidebar.success("✅ 分析完了")
+        # 既存の結果を表示 (再描画でも消えないように)
+        st.write("### 前回の分析結果: ")
+        analysis_results = st.session_state['analysis_results']
+        st.write("#### 1) スイング分析結果")
+        st.write(analysis_results['modeling']['analysis_result'])
+        st.write("#### 2) 対話内容")
+        if analysis_results['interactive']:
+            for speaker, msg in analysis_results['interactive'].get("conversation_history", []):
+                st.write(f"**{speaker}**: {msg}")
+        st.write("#### 3) 目標設定")
+        st.write(analysis_results['goal_setting']['goal_setting_result'])
+        st.write("#### 4) トレーニングプラン")
+        st.write(analysis_results['training_plan'])
+        st.write("#### 5) 参考情報")
+        st.write(analysis_results['search_results'])
+        st.write("#### 6) 最終コーチングレポート")
+        st.markdown(analysis_results['final_summary'])
     else:
         st.sidebar.info("📊 分析待ち")
 
@@ -408,9 +400,9 @@ def main():
             reset_confirm = st.button("本当にリセットしますか？")
             if reset_confirm:
                 for key in ['pose_estimation_completed', 'user_json_path', 'ideal_json_path', 
-                            'conversation_history', 'current_question', 'analysis_results',
+                            'conversation_history', 'analysis_results',
                             'processing_step', 'error_state', 'current_progress',
-                            'visualization_path', 'ideal_visualization_path', 'responses']:
+                            'visualization_path', 'ideal_visualization_path']:
                     if key in st.session_state:
                         del st.session_state[key]
                 cleanup()
@@ -420,7 +412,6 @@ def on_session_end():
     """アプリケーション終了時のクリーンアップ"""
     cleanup()
 
-# セッション終了時のクリーンアップを登録
 import atexit
 atexit.register(on_session_end)
 

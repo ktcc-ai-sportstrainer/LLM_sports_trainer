@@ -1,4 +1,4 @@
-from typing import Dict, Any, List, Optional, Callable
+from typing import Dict, Any, List, Optional
 import json
 import os
 from langchain_openai import ChatOpenAI
@@ -18,15 +18,13 @@ class InteractiveAgent(BaseAgent):
         self.current_turn = 0
         self.max_turns = 3
         self.mode = mode
+        # 対話履歴を保持するクラス
         self.conversation_history = ConversationHistory()
+        # prompts.jsonの読み込み
         self.prompts = self._load_prompts()
-        self.streamlit_input_callback = None
+        # 旧：self.streamlit_input_callback = None
         self.responses = []
         self.last_response = None
-
-    def set_streamlit_callback(self, callback: Callable[[str], str]):
-        """Streamlit用のコールバック関数を設定"""
-        self.streamlit_input_callback = callback
 
     def _load_prompts(self) -> Dict[str, str]:
         """プロンプトファイルを読み込む"""
@@ -41,21 +39,22 @@ class InteractiveAgent(BaseAgent):
         conversation_history: Optional[List[Any]] = None
     ) -> Dict[str, Any]:
         """エージェントのメイン実行メソッド"""
+        # 既に会話履歴があれば、内部のconversation_historyにも反映
         if conversation_history:
             self.conversation_history.messages = conversation_history
 
         try:
-            # 質問の生成
+            # (1) 初期質問を生成
             questions = await self._generate_initial_questions(persona, policy)
             collected_responses = []
             
-            # モードに応じた処理
+            # (2) モード別で処理
             if self.mode == "cli":
+                # CLIモード: ターミナルで質問→回答
                 for question in questions:
                     if self.current_turn >= self.max_turns:
                         break
-                    
-                    response = await self._get_user_response(question)
+                    response = await self._cli_get_user_response(question)
                     if response:
                         self.conversation_history.messages.append(("assistant", question))
                         self.conversation_history.messages.append(("user", response))
@@ -63,22 +62,32 @@ class InteractiveAgent(BaseAgent):
                         self.current_turn += 1
 
             elif self.mode == "streamlit":
-                for question in questions:
-                    if self.current_turn >= self.max_turns:
-                        break
-                    
-                    response = None
-                    if self.streamlit_input_callback:
-                        response = self.streamlit_input_callback(question)
-                        
-                    if response:
-                        self.conversation_history.messages.append(("assistant", question))
-                        self.conversation_history.messages.append(("user", response))
-                        collected_responses.append(response)
-                        self.current_turn += 1
+                # (修正) Streamlitモード: 
+                # 質問をすべて1つのform内に表示し、一度の送信でまとめて回答を受け取る
+                st.write("### 以下の質問に回答してください:")
+                with st.form("interactive_questions_form"):
+                    user_answers = []
+                    for i, question in enumerate(questions):
+                        st.write(f"Q{i+1}: {question}")
+                        answer = st.text_area(
+                            label=f"回答 {i+1}",
+                            key=f"interactive_answer_{i}"
+                        )
+                        user_answers.append(answer)
+
+                    submitted = st.form_submit_button("送信")
+
+                if submitted:
+                    # フォーム送信時に一度だけ再実行される
+                    for question, answer in zip(questions, user_answers):
+                        if self.current_turn < self.max_turns and answer.strip():
+                            self.conversation_history.messages.append(("assistant", question))
+                            self.conversation_history.messages.append(("user", answer.strip()))
+                            collected_responses.append(answer.strip())
+                            self.current_turn += 1
 
             elif self.mode == "mock":
-                # モックモードの処理
+                # モックモード
                 for question in questions:
                     mock_response = f"【Mock Response】for: {question}"
                     self.conversation_history.messages.append(("assistant", question))
@@ -86,10 +95,10 @@ class InteractiveAgent(BaseAgent):
                     collected_responses.append(mock_response)
                     self.current_turn += 1
 
-            # 会話から洞察を抽出
+            # (3) 会話から洞察を抽出
             insights = await self._extract_insights()
 
-            # 最後の応答を保存
+            # (4) 最後の応答を保存
             self.responses = collected_responses
             self.last_response = collected_responses[-1] if collected_responses else None
 
@@ -111,10 +120,9 @@ class InteractiveAgent(BaseAgent):
 
     async def _generate_initial_questions(self, persona: Any, policy: Any) -> List[str]:
         """初期質問を生成"""
-        # 辞書に変換する処理を追加
         persona_dict = persona.dict() if hasattr(persona, 'dict') else persona
         policy_dict = policy.dict() if hasattr(policy, 'dict') else policy
-        
+
         prompt = self.prompts["initial_questions_prompt"].format(
             persona=json.dumps(persona_dict, ensure_ascii=False),
             policy=json.dumps(policy_dict, ensure_ascii=False)
@@ -122,24 +130,10 @@ class InteractiveAgent(BaseAgent):
         response = await self.llm.ainvoke(prompt)
         return self._parse_questions(response.content)
 
-    async def _get_user_response(self, question: str) -> str:
-        """各モードに応じたユーザー回答の取得"""
-        if self.mode == "cli":
-            print(f"\nAssistant: {question}")
-            loop = asyncio.get_event_loop()
-            with ThreadPoolExecutor() as pool:
-                response = await loop.run_in_executor(pool, input, "You> ")
-            return response.strip()
-        
-        elif self.mode == "streamlit":
-            if self.streamlit_input_callback:
-                return self.streamlit_input_callback(question)
-            return ""
-            
-        elif self.mode == "mock":
-            return f"【Mock Response】for: {question}"
-            
-        return ""
+    def _parse_questions(self, content: str) -> List[str]:
+        """質問文字列をリストに分解"""
+        lines = content.strip().split("\n")
+        return [line.strip() for line in lines if line.strip()]
 
     async def _extract_insights(self) -> List[str]:
         """会話から洞察を抽出"""
@@ -152,12 +146,15 @@ class InteractiveAgent(BaseAgent):
         response = await self.llm.ainvoke(prompt)
         return self._parse_insights(response.content)
 
-    def _parse_questions(self, content: str) -> List[str]:
-        """質問文字列をリストに分解"""
-        lines = content.strip().split("\n")
-        return [line.strip() for line in lines if line.strip()]
-
     def _parse_insights(self, content: str) -> List[str]:
         """洞察文字列をリストに分解"""
         lines = content.strip().split("\n")
         return [line.strip() for line in lines if line.strip()]
+
+    async def _cli_get_user_response(self, question: str) -> str:
+        """CLIでユーザー回答を取得"""
+        print(f"\nAssistant: {question}")
+        loop = asyncio.get_event_loop()
+        with ThreadPoolExecutor() as pool:
+            response = await loop.run_in_executor(pool, input, "You> ")
+        return response.strip()
