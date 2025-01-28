@@ -87,7 +87,7 @@ def validate_inputs(basic_info, coaching_policy):
 # ==================== メインアプリ ====================
 def main():
     st.set_page_config(page_title="野球スイングコーチングAI", page_icon="⚾", layout="wide")
-    st.title("野球スイングコーチングAI (3ステップ改良版)")
+    st.title("LLM Baseball Swing Coach")
 
     # セッション変数を初期化
     init_session_state()
