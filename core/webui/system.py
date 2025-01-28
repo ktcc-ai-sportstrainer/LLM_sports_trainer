@@ -58,22 +58,20 @@ class WebUISwingCoachingSystem:
             Tuple[str, str, str]: (pose_json_path, visualization_video_path, visualization_json_path)
         """
         try:
-            # 3D姿勢推定の実行
-            output_dir = "./run/output_temp"
+            # 動画名から出力ディレクトリを設定
+            video_name = os.path.splitext(os.path.basename(video_path))[0]
+            output_dir = f'./run/output/{video_name}/'
             os.makedirs(output_dir, exist_ok=True)
             
-            pose_json_path = os.path.join(output_dir, "pose_3d.json")
-            vis_video_path = os.path.join(output_dir, "visualization.mp4")
-            vis_json_path = os.path.join(output_dir, "visualization_data.json")
+            # 出力JSONのパス
+            pose_json_path = os.path.join(output_dir, "3d_result.json")
 
             # MotionAGFormerの実行
             cmd = [
                 "python",
                 "MotionAGFormer/run/vis.py",
                 "--video", video_path,
-                "--output_video", vis_video_path,
-                "--output_json", pose_json_path,
-                "--vis_json", vis_json_path
+                "--gpu", "0"
             ]
             
             process = await asyncio.create_subprocess_exec(
@@ -85,6 +83,23 @@ class WebUISwingCoachingSystem:
 
             if stderr:
                 self.logger.log_warning(f"Pose estimation stderr: {stderr.decode()}")
+
+            if process.returncode != 0:
+                raise RuntimeError(f"Pose estimation failed: {stderr.decode()}")
+
+            # vis.pyの出力規則に従ってパスを設定
+            vis_video_path = os.path.join(output_dir, f"{video_name}.mp4")
+            vis_json_path = os.path.join(output_dir, "visualization_data.json")
+
+            # 結果のJSONをvisualization_data.jsonにコピー
+            if os.path.exists(pose_json_path):
+                with open(pose_json_path, 'r') as f:
+                    vis_data = json.load(f)
+                with open(vis_json_path, 'w') as f:
+                    json.dump(vis_data, f, indent=4)
+
+            if not os.path.exists(vis_video_path):
+                raise FileNotFoundError(f"Visualization video not generated: {vis_video_path}")
 
             # 表示用の動画パスを生成
             display_video_path = self.video_display.prepare_video_display(vis_video_path)
