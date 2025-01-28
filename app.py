@@ -1,33 +1,46 @@
 import streamlit as st
-from config.load_config import load_config
-from core.webui.system import WebUISwingCoachingSystem
-from core.webui.state import WebUIState
-from core.base.logger import SystemLogger
 import os
 import json
 import asyncio
-import subprocess
-import time
 from datetime import datetime
-# ▼ 変更: interactive_agentからの入力コールバック関数は不要になったので削除
-# from agents.interactive_agent.agent import InteractiveAgent
 
+# 環境変数の読み込み（.envなどにOPENAI_API_KEYを設定）
 from dotenv import load_dotenv
-
-# .envファイルを確実に読み込む
 load_dotenv(override=True)
 
-# セッション状態の初期化
-if 'initialization_done' not in st.session_state:
-    st.session_state.initialization_done = True
-    st.session_state.update({
-        'pose_estimation_completed': False,
-        'conversation_history': [],
-        'analysis_results': None,
-        'processing_step': None,
-        'error_state': None,
-        'current_progress': 0
-    })
+from config.load_config import load_config
+from core.webui.system import WebUISwingCoachingSystem
+from core.base.logger import SystemLogger
+from agents.interactive_agent.agent import InteractiveAgent
+
+def init_session_state():
+    """セッション変数の初期化"""
+    if "current_step" not in st.session_state:
+        st.session_state.current_step = 1  # ステップ1～3
+    if "user_json_path" not in st.session_state:
+        st.session_state.user_json_path = None
+    if "ideal_json_path" not in st.session_state:
+        st.session_state.ideal_json_path = None
+    if "visualization_path" not in st.session_state:
+        st.session_state.visualization_path = None
+    if "ideal_visualization_path" not in st.session_state:
+        st.session_state.ideal_visualization_path = None
+    if "pose_estimation_completed" not in st.session_state:
+        st.session_state.pose_estimation_completed = False
+
+    # Step2で生成した質問一覧
+    if "generated_questions" not in st.session_state:
+        st.session_state.generated_questions = []
+    # Step2でのユーザー回答
+    if "user_answers" not in st.session_state:
+        st.session_state.user_answers = []
+    # Step2: InteractiveAgentの対話結果
+    if "interactive_result" not in st.session_state:
+        st.session_state.interactive_result = {}
+
+    # Step3 全エージェント分析の最終結果
+    if "analysis_results" not in st.session_state:
+        st.session_state.analysis_results = None
 
 def run_sync(coro):
     """非同期処理を同期的に実行するためのヘルパー関数"""
@@ -39,381 +52,343 @@ def run_sync(coro):
         loop.close()
 
 def save_temp_file(uploaded_file, prefix):
-    """一時ファイルを保存し、パスを返す"""
-    if uploaded_file is None:
+    """一時ファイルとしてアップロードを保存し、そのパスを返す"""
+    if not uploaded_file:
         return None
-    
     temp_dir = "temp_files"
     os.makedirs(temp_dir, exist_ok=True)
-    
     file_path = os.path.join(temp_dir, f"{prefix}_{uploaded_file.name}")
     with open(file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
     return file_path
 
 def cleanup():
-    """リソースのクリーンアップ"""
+    """一時ファイルの削除"""
     temp_dir = "temp_files"
     if os.path.exists(temp_dir):
-        for file in os.listdir(temp_dir):
-            file_path = os.path.join(temp_dir, file)
-            try:
-                os.remove(file_path)
-            except Exception as e:
-                st.error(f"Failed to remove temp file {file_path}: {e}")
+        for f in os.listdir(temp_dir):
+            os.remove(os.path.join(temp_dir, f))
 
 def validate_inputs(basic_info, coaching_policy):
-    """入力値のバリデーション"""
+    """最低限のバリデーション: 名前・目標が必須"""
     required_fields = {
         "name": "名前",
         "goal": "目標",
     }
-    
     missing_fields = []
     for field, display_name in required_fields.items():
         if not basic_info.get(field):
             missing_fields.append(display_name)
-            
     if missing_fields:
         st.error(f"以下の項目は必須です: {', '.join(missing_fields)}")
         return False
     return True
 
+# ==================== メインアプリ ====================
 def main():
-    # ロガーの初期化
+    st.set_page_config(page_title="野球スイングコーチングAI", page_icon="⚾", layout="wide")
+    st.title("野球スイングコーチングAI (3ステップ改良版)")
+
+    # セッション変数を初期化
+    init_session_state()
+
+    # ロガー & システム初期化
     logger = SystemLogger()
+    config = load_config()
+    system = WebUISwingCoachingSystem(config)
 
-    # StreamlitのUI設定
-    st.set_page_config(
-        page_title="野球スイングコーチングAI",
-        page_icon="⚾",
-        layout="wide"
-    )
-
-    st.title("野球スイングコーチングAI")
-
-    # インタラクティブモードの選択
-    interactive_mode = st.sidebar.checkbox("インタラクティブモードを有効にする", value=True)
-
-    # サイドバー: 基本情報入力
+    # sidebar入力 (基本情報 & 指導方針)
     st.sidebar.header("選手情報")
-
     basic_info = {
         "name": st.sidebar.text_input("名前"),
         "age": st.sidebar.number_input("年齢", min_value=6, max_value=100, value=16),
-        "grade": st.sidebar.text_input("学年（例：高校1年）"),
-        "position": st.sidebar.selectbox(
-            "ポジション",
-            ["投手", "捕手", "内野手", "外野手"]
-        ),
+        "grade": st.sidebar.text_input("学年"),
+        "position": st.sidebar.selectbox("ポジション", ["投手","捕手","内野手","外野手"]),
         "dominant_hand": {
-            "batting": st.sidebar.selectbox("打席", ["右打ち", "左打ち", "両打ち"]),
-            "throwing": st.sidebar.selectbox("投球", ["右投げ", "左投げ"])
+            "batting": st.sidebar.selectbox("打席", ["右打ち","左打ち","両打ち"]),
+            "throwing": st.sidebar.selectbox("投球", ["右投げ","左投げ"])
         },
         "height": st.sidebar.number_input("身長(cm)", min_value=100, max_value=220, value=170),
         "weight": st.sidebar.number_input("体重(kg)", min_value=30, max_value=150, value=60),
         "experience": {
             "years": st.sidebar.number_input("野球経験年数", min_value=0, max_value=20, value=3),
-            "history": st.sidebar.text_area("経歴（例：少年野球3年→中学野球3年）")
+            "history": st.sidebar.text_area("野球の経歴")
         },
         "goal": st.sidebar.text_area("達成したい目標"),
-        "practice_time": st.sidebar.text_input("普段の練習時間（例：平日2時間）"),
-        "personal_issues": [x for x in st.sidebar.text_area("現在の課題（改行区切りで複数入力可）").split('\n') if x.strip()],
+        "practice_time": st.sidebar.text_input("普段の練習時間"),
+        "personal_issues": [x for x in st.sidebar.text_area("現状の課題(改行区切り)").split('\n') if x.strip()]
     }
 
-    # サイドバー: 指導方針
     st.sidebar.header("指導方針")
-
     coaching_policy = {
         "philosophy": st.sidebar.text_area("指導の基本方針"),
-        "focus_points": [x for x in st.sidebar.text_area("重点的に指導したいポイント（改行区切りで複数入力可）").split('\n') if x.strip()],
-        "teaching_style": st.sidebar.selectbox(
-            "指導スタイル",
-            ["基礎重視", "実践重視", "メンタル重視", "バランス重視"]
-        ),
-        "player_strengths": [x for x in st.sidebar.text_area("選手の強み（改行区切りで複数入力可）").split('\n') if x.strip()],
-        "player_weaknesses": [x for x in st.sidebar.text_area("選手の課題（改行区切りで複数入力可）").split('\n') if x.strip()],
+        "focus_points": [x for x in st.sidebar.text_area("重点指導ポイント(改行区切り)").split('\n') if x.strip()],
+        "teaching_style": st.sidebar.selectbox("指導スタイル", ["基礎重視","実践重視","メンタル重視","バランス重視"]),
+        "player_strengths": [x for x in st.sidebar.text_area("選手の強み(改行区切り)").split('\n') if x.strip()],
+        "player_weaknesses": [x for x in st.sidebar.text_area("選手の課題(改行区切り)").split('\n') if x.strip()]
     }
 
-    # システムの初期化
-    config = load_config()
-    system = WebUISwingCoachingSystem(config)
-    system.interactive_enabled = interactive_mode  # インタラクティブモードON/OFF切り替え
+    # ===== サイドバーで "解析後の動画" を常時表示 =====
+    if st.session_state.visualization_path:
+        st.sidebar.video(st.session_state.visualization_path)
+        st.sidebar.caption("解析済みスイング動画")
 
-    # メイン画面: スイングデータのアップロード
-    st.write("## スイングデータのアップロード")
+    # Step2での聞き取り内容をサイドバーに表示
+    if st.session_state.user_answers:
+        st.sidebar.write("### Step2 聞き取り内容")
+        for i, ans in enumerate(st.session_state.user_answers):
+            st.sidebar.write(f"Q{i+1}: {ans}")
 
-    user_input_type = st.radio(
-        "あなたのスイングデータの入力方法を選択してください",
-        ["動画をアップロード", "3D姿勢データ(JSON)をアップロード"]
-    )
+    # サイドバー下部に「現在のステップ」表示
+    st.sidebar.write(f"■ 現在のステップ: {st.session_state.current_step}")
 
-    if user_input_type == "動画をアップロード":
-        user_uploaded_file = st.file_uploader(
-            "あなたのスイング動画をアップロードしてください（必須）", 
-            type=["mp4", "mov", "avi"]
-        )
-        user_json_file = None
-    else:
-        user_json_file = st.file_uploader(
-            "あなたの3D姿勢データ(JSON)をアップロードしてください（必須）", 
-            type=["json"]
-        )
-        if user_json_file:
-            user_json_path = save_temp_file(user_json_file, "user")
-            st.session_state['user_json_path'] = user_json_path
-            st.session_state['pose_estimation_completed'] = True
-            user_uploaded_file = None
+    # ========== STEP 1: 3D姿勢推定 ==========
+    if st.session_state.current_step == 1:
+        st.subheader("Step 1: 3D姿勢推定")
 
-    # 理想のスイングデータ（オプション）
-    with st.expander("理想のスイングデータを追加（任意）"):
-        ideal_input_type = st.radio(
-            "理想のスイングデータの入力方法を選択してください",
+        st.write("以下のいずれかの方法であなたのスイングデータを入力し、3D姿勢推定を実行します。")
+
+        # 動画 or JSON を選択
+        user_input_type = st.radio(
+            "スイングデータの種類",
             ["動画をアップロード", "3D姿勢データ(JSON)をアップロード"]
         )
-        
-        if ideal_input_type == "動画をアップロード":
-            ideal_uploaded_file = st.file_uploader(
-                "理想のスイング動画をアップロード", 
-                type=["mp4", "mov", "avi"]
-            )
-            ideal_json_file = None
-        else:
-            ideal_json_file = st.file_uploader(
-                "理想の3D姿勢データ(JSON)をアップロード", 
-                type=["json"]
-            )
-            if ideal_json_file:
-                ideal_json_path = save_temp_file(ideal_json_file, "ideal")
-                st.session_state['ideal_json_path'] = ideal_json_path
-                ideal_uploaded_file = None
 
-    # 3D姿勢推定の実行（動画アップロード時のみ）
-    if user_input_type == "動画をアップロード" and user_uploaded_file:
-        st.write("## Step 1: 3D姿勢推定")
-        if st.button("3D姿勢推定を実行"):
-            if not validate_inputs(basic_info, coaching_policy):
-                st.stop()
-
-            with st.spinner('3D姿勢推定を実行中...'):
-                try:
-                    # ユーザー動画の処理
-                    user_temp_path = save_temp_file(user_uploaded_file, "user_video")
-                    pose_json_path, vis_video_path, vis_json_path = run_sync(
-                        system.process_video(user_temp_path)
-                    )
-                    
-                    # 状態の更新
-                    st.session_state['user_json_path'] = pose_json_path
-                    st.session_state['visualization_path'] = vis_video_path
-                    st.session_state['pose_estimation_completed'] = True
-
-                    st.success("3D姿勢推定が完了しました！")
-
-                    # 理想動画の処理（存在する場合）
-                    if ideal_uploaded_file:
-                        ideal_temp_path = save_temp_file(ideal_uploaded_file, "ideal_video")
-                        pose_json_path, vis_video_path, vis_json_path = run_sync(
-                            system.process_video(ideal_temp_path)
-                        )
-                        
-                        st.session_state['ideal_json_path'] = pose_json_path
-                        st.session_state['ideal_visualization_path'] = vis_video_path
-
-                        st.success("理想動画の3D姿勢推定が完了しました！")
-
-                    st.info("Step 2のコーチング分析に進むことができます。")
-
-                except Exception as e:
-                    st.error(f"エラーが発生しました: {str(e)}")
-                    logger.log_error_details(error=e, agent="system")
+        if user_input_type == "動画をアップロード":
+            user_uploaded_file = st.file_uploader("あなたのスイング動画をアップロード", type=["mp4","mov","avi"])
+            if user_uploaded_file and st.button("3D姿勢推定を実行"):
+                if not validate_inputs(basic_info, coaching_policy):
                     st.stop()
+                with st.spinner("推定を実行中..."):
+                    user_video_path = save_temp_file(user_uploaded_file, "user_video")
+                    try:
+                        pose_json_path, vis_video_path, _ = run_sync(system.process_video(user_video_path))
+                        st.session_state.user_json_path = pose_json_path
+                        st.session_state.visualization_path = vis_video_path
+                        st.session_state.pose_estimation_completed = True
+                        st.success("推定が完了しました。次に進んでください。")
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
 
-    # 処理結果の動画表示セクション
-    if 'visualization_path' in st.session_state:
-        st.write("## スイング映像")
-        # ユーザーの動画表示
-        st.write("### あなたのスイング")
-        st.video(st.session_state['visualization_path'])
-        
-        # ダウンロードボタン
-        with open(st.session_state['visualization_path'], 'rb') as f:
-            st.download_button(
-                label="解析済み動画をダウンロード",
-                data=f,
-                file_name="swing_analysis.mp4",
-                mime="video/mp4"
-            )
-        
-        # 理想スイング（存在する場合）
-        if 'ideal_visualization_path' in st.session_state:
-            st.write("### 理想のスイング")
-            st.video(st.session_state['ideal_visualization_path'])
-            # 理想スイングのダウンロードボタン
-            with open(st.session_state['ideal_visualization_path'], 'rb') as f:
-                st.download_button(
-                    label="理想スイング動画をダウンロード",
-                    data=f,
-                    file_name="ideal_swing.mp4",
-                    mime="video/mp4"
-                )
+        else:  # JSONアップロード
+            user_json_file = st.file_uploader("あなたの3D姿勢データ(JSON)をアップロード", type=["json"])
+            if user_json_file:
+                if not validate_inputs(basic_info, coaching_policy):
+                    st.stop()
+                json_path = save_temp_file(user_json_file, "user_pose")
+                st.session_state.user_json_path = json_path
+                st.session_state.pose_estimation_completed = True
+                st.success("JSONを登録しました。")
 
-    # Step 2: コーチング分析の実行
-    if st.button("Step 2: コーチング分析を実行", 
-                disabled=not st.session_state.get('pose_estimation_completed', False)):
-        if not validate_inputs(basic_info, coaching_policy):
-            st.stop()
+        # Optional: 理想スイング
+        with st.expander("理想スイングデータ(任意)"):
+            ideal_type = st.radio("理想スイングの種類", ["なし","動画をアップロード","3D姿勢JSON"])
+            if ideal_type == "動画をアップロード":
+                ideal_vid = st.file_uploader("理想動画をアップロード", type=["mp4","mov","avi"], key="ideal_vid")
+                if ideal_vid and st.button("理想動画の3D姿勢推定を実行"):
+                    ideal_temp_path = save_temp_file(ideal_vid, "ideal_video")
+                    with st.spinner("理想スイング推定..."):
+                        try:
+                            pose_json_path, vis_video_path, _ = run_sync(system.process_video(ideal_temp_path))
+                            st.session_state.ideal_json_path = pose_json_path
+                            st.session_state.ideal_visualization_path = vis_video_path
+                            st.success("理想スイング推定完了。")
+                        except Exception as e:
+                            st.error(f"エラー: {e}")
+            elif ideal_type == "3D姿勢JSON":
+                ideal_json = st.file_uploader("理想3D姿勢JSON", type=["json"], key="ideal_json")
+                if ideal_json:
+                    ideal_json_path = save_temp_file(ideal_json, "ideal_pose")
+                    st.session_state.ideal_json_path = ideal_json_path
+                    st.success("理想JSONを登録しました。")
 
-        # 進行状況表示用のコンテナ
-        status_container = st.empty()
-        result_container = st.container()
-        
-        with st.spinner('コーチング分析を実行中...'):
+        # 生成された動画のプレビュー
+        if st.session_state.visualization_path:
+            st.write("### 解析結果のスイング動画プレビュー")
+            st.video(st.session_state.visualization_path)
+
+        # 次のステップへ
+        if st.button("Step 2へ", disabled=not st.session_state.pose_estimation_completed):
+            st.session_state.current_step = 2
+
+    # ========== STEP 2: 対話(聞き取り)のみ ==========
+    elif st.session_state.current_step == 2:
+        st.subheader("Step 2: インタラクティブセッション (聞き取り)")
+
+        st.write("ペルソナ情報や指導方針を考慮した上で、まずはAIが3つの質問を生成し、それに回答してください。")
+
+        system.interactive_enabled = True
+
+        # 1) 質問生成(最初に一度だけ)
+        if not st.session_state.generated_questions:
+            # InteractiveAgent の _generate_initial_questions を利用して質問作成
+            # ※ 直接呼べない場合はPublicメソッドを作る / or ここだけ簡易利用
+            agent = system.agents["interactive"]
             try:
-                user_json_path = st.session_state.get('user_json_path')
-                ideal_json_path = st.session_state.get('ideal_json_path')
+                questions = run_sync(agent._generate_initial_questions(basic_info, coaching_policy))
+                # 例えば 「\n区切りで3問」みたいに出力される想定
+                st.session_state.generated_questions = questions
+            except Exception as e:
+                st.error(f"質問生成中にエラー: {e}")
 
-                # モーション分析
-                status_container.info("🔄 モーション分析を実行中...")
-                modeling_result = run_sync(system.agents["modeling"].run(
-                    user_pose_json=user_json_path,
-                    ideal_pose_json=ideal_json_path
-                ))
-                with result_container:
-                    st.write("### スイング分析結果")
-                    st.write(modeling_result.get("analysis_result", "分析結果がありません"))
+        # 2) フォーム表示
+        if st.session_state.generated_questions:
+            st.write("#### 以下の質問に回答してください。")
+            with st.form("hearing_form"):
+                user_answers = []
+                for i, question in enumerate(st.session_state.generated_questions):
+                    st.write(f"Q{i+1}: {question}")
+                    ans = st.text_area(f"answer_{i}", key=f"hearing_q_{i}")
+                    user_answers.append(ans)
+                submitted = st.form_submit_button("送信")
 
-                # インタラクティブセッション
-                interactive_result = {}
-                if interactive_mode:
-                    status_container.info("🗣️ インタラクティブセッションを開始...")
+            if submitted:
+                # 3) InteractiveAgentに対話ログとしてセット
+                #    ここではシンプルに: questions + user_answers を追加する
+                try:
+                    # run_sync() で agent.run() を呼ぶ
+                    # ただ、agent.run() 内部でも _generate_initial_questions が走るので注意が必要
+                    # ここでは "conversation_history" を後から付け足す形に
                     interactive_result = run_sync(system.agents["interactive"].run(
                         persona=basic_info,
                         policy=coaching_policy
                     ))
-                    with result_container:
-                        st.write("### 対話分析結果")
-                        conversation = interactive_result.get("conversation_history", [])
-                        if conversation:
-                            for speaker, msg in conversation:
-                                with st.chat_message(speaker.lower()):
-                                    st.write(msg)
+                    # conversation_historyにQ&Aを追記
+                    for q, a in zip(st.session_state.generated_questions, user_answers):
+                        interactive_result["conversation_history"].append(("assistant", q))
+                        interactive_result["conversation_history"].append(("user", a))
 
-                # 目標設定
-                status_container.info("🎯 目標を設定中...")
-                goal_result = run_sync(system.agents["goal_setting"].run(
-                    persona=basic_info,
-                    policy=coaching_policy,
-                    conversation_insights=interactive_result.get("interactive_insights", []),
-                    motion_analysis=modeling_result.get("analysis_result", "")
-                ))
-                with result_container:
-                    st.write("### 設定された目標")
-                    st.write(goal_result.get("goal_setting_result", ""))
+                    st.session_state.interactive_result = interactive_result
+                    st.session_state.user_answers = user_answers  # サイドバー用表示
 
-                # トレーニングプラン作成
-                status_container.info("📋 トレーニングプランを作成中...")
-                plan_result = run_sync(system.agents["plan"].run(
-                    goal=goal_result.get("goal_setting_result", ""),
-                    motion_analysis=modeling_result.get("analysis_result", "")
-                ))
-                with result_container:
-                    st.write("### トレーニングプラン")
-                    st.write(plan_result)
+                    st.success("聞き取りが完了しました。")
+                except Exception as e:
+                    st.error(f"対話中にエラー: {e}")
 
-                # 関連情報検索
-                status_container.info("🔍 関連情報を検索中...")
-                search_result = run_sync(system.agents["search"].run(plan_result))
-                with result_container:
-                    st.write("### 参考情報")
-                    st.write(search_result)
+        # 対話結果があればプレビュー表示
+        if st.session_state.interactive_result:
+            st.write("### 対話結果プレビュー")
+            conv = st.session_state.interactive_result["conversation_history"]
+            if conv:
+                for speaker, msg in conv:
+                    st.write(f"**{speaker}**: {msg}")
 
-                # 最終サマリー生成
-                status_container.info("📝 最終レポートを作成中...")
-                final_summary = run_sync(system.agents["summarize"].run(
-                    analysis=modeling_result.get("analysis_result", ""),
-                    goal=goal_result.get("goal_setting_result", ""),
-                    plan=plan_result
-                ))
-                with result_container:
-                    st.write("### 最終コーチングレポート")
-                    st.markdown(final_summary)
-                    
-                    # レポートのダウンロード機能
-                    current_time = datetime.now().strftime('%Y%m%d')
-                    st.download_button(
-                        label="コーチングレポートをダウンロード",
-                        data=final_summary,
-                        file_name=f"coaching_report_{basic_info['name']}_{current_time}.txt",
-                        mime="text/plain"
-                    )
+        # 次のステップへ
+        if st.button("Step 3へ", disabled=(not bool(st.session_state.interactive_result))):
+            st.session_state.current_step = 3
 
-                # 完了表示
-                status_container.success("✅ 分析が完了しました！")
-                st.balloons()
+    # ========== STEP 3: モーション分析, GoalSetting, Plan, Search, Summarize ==========
+    elif st.session_state.current_step == 3:
+        st.subheader("Step 3: 総合分析・レポート生成")
 
-                # セッション状態の更新 (結果をすべてsession_stateに保存)
-                st.session_state['analysis_results'] = {
-                    "modeling": modeling_result,
-                    "interactive": interactive_result if interactive_mode else None,
-                    "goal_setting": goal_result,
-                    "training_plan": plan_result,
-                    "search_results": search_result,
-                    "final_summary": final_summary
-                }
+        st.write("ここでスイング分析・目標設定・プラン作成・情報検索・最終レポート作成をまとめて実行します。")
 
-            except Exception as e:
-                status_container.error(f"分析中にエラーが発生しました: {str(e)}")
-                logger.log_error_details(error=e, agent="system")
+        if st.button("分析を実行"):
+            if not validate_inputs(basic_info, coaching_policy):
                 st.stop()
 
-    # 分析進捗状況の表示
-    if st.session_state.get('analysis_results'):
-        st.sidebar.success("✅ 分析完了")
-        # 既存の結果を表示 (再描画でも消えないように)
-        st.write("### 前回の分析結果: ")
-        analysis_results = st.session_state['analysis_results']
-        st.write("#### 1) スイング分析結果")
-        st.write(analysis_results['modeling']['analysis_result'])
-        st.write("#### 2) 対話内容")
-        if analysis_results['interactive']:
-            for speaker, msg in analysis_results['interactive'].get("conversation_history", []):
-                st.write(f"**{speaker}**: {msg}")
-        st.write("#### 3) 目標設定")
-        st.write(analysis_results['goal_setting']['goal_setting_result'])
-        st.write("#### 4) トレーニングプラン")
-        st.write(analysis_results['training_plan'])
-        st.write("#### 5) 参考情報")
-        st.write(analysis_results['search_results'])
-        st.write("#### 6) 最終コーチングレポート")
-        st.markdown(analysis_results['final_summary'])
-    else:
-        st.sidebar.info("📊 分析待ち")
+            user_json_path = st.session_state.user_json_path
+            ideal_json_path = st.session_state.ideal_json_path
 
-    # フッター
-    st.markdown("---")
-    st.caption("Powered by SwingCoachingSystem")
+            # 進捗バーやステータス表示用
+            status_container = st.empty()
+            progress_bar = st.progress(0)
+            result_container = st.container()
 
-    # セッション状態のリセットボタン
-    with st.sidebar:
-        if st.button("分析をリセット"):
-            reset_confirm = st.button("本当にリセットしますか？")
-            if reset_confirm:
-                for key in ['pose_estimation_completed', 'user_json_path', 'ideal_json_path', 
-                            'conversation_history', 'analysis_results',
-                            'processing_step', 'error_state', 'current_progress',
-                            'visualization_path', 'ideal_visualization_path']:
-                    if key in st.session_state:
-                        del st.session_state[key]
-                cleanup()
-                st.experimental_rerun()
+            with st.spinner("分析中..."):
+                try:
+                    # 1) ModelingAgent
+                    status_container.info("モーション分析を実行中...")
+                    modeling_result = run_sync(system.agents["modeling"].run(
+                        user_pose_json=user_json_path,
+                        ideal_pose_json=ideal_json_path
+                    ))
+                    progress_bar.progress(20)
 
-def on_session_end():
-    """アプリケーション終了時のクリーンアップ"""
-    cleanup()
+                    # 2) GoalSettingAgent
+                    status_container.info("目標を設定中...")
+                    conversation_insights = st.session_state.interactive_result.get("interactive_insights", [])
+                    goal_result = run_sync(system.agents["goal_setting"].run(
+                        persona=basic_info,
+                        policy=coaching_policy,
+                        conversation_insights=conversation_insights,
+                        motion_analysis=modeling_result.get("analysis_result","")
+                    ))
+                    progress_bar.progress(40)
 
+                    # 3) PlanAgent
+                    status_container.info("トレーニングプランを作成中...")
+                    plan_result = run_sync(system.agents["plan"].run(
+                        goal=goal_result.get("goal_setting_result",""),
+                        motion_analysis=modeling_result.get("analysis_result","")
+                    ))
+                    progress_bar.progress(60)
+
+                    # 4) SearchAgent
+                    status_container.info("参考情報を検索中...")
+                    search_result = run_sync(system.agents["search"].run(plan_result))
+                    progress_bar.progress(80)
+
+                    # 5) SummarizeAgent
+                    status_container.info("最終レポートを作成中...")
+                    final_summary = run_sync(system.agents["summarize"].run(
+                        analysis=modeling_result.get("analysis_result",""),
+                        goal=goal_result.get("goal_setting_result",""),
+                        plan=plan_result
+                    ))
+                    progress_bar.progress(100)
+
+                    # 結果をまとめてセッションステートに
+                    st.session_state.analysis_results = {
+                        "modeling": modeling_result,
+                        "goal_setting": goal_result,
+                        "plan": plan_result,
+                        "search_results": search_result,
+                        "final_summary": final_summary
+                    }
+
+                    status_container.success("分析が完了しました！")
+
+                except Exception as e:
+                    status_container.error(f"分析中にエラーが発生: {e}")
+                    st.stop()
+
+        # 分析結果があれば表示
+        if st.session_state.analysis_results:
+            results = st.session_state.analysis_results
+            st.write("### スイング分析結果")
+            st.write(results["modeling"].get("analysis_result",""))
+            st.write("### 目標設定")
+            st.write(results["goal_setting"].get("goal_setting_result",""))
+            st.write("### トレーニングプラン")
+            st.write(results["plan"])
+            st.write("### 参考情報")
+            st.write(results["search_results"])
+            st.write("### 最終レポート")
+            st.markdown(results["final_summary"])
+
+            # ダウンロードボタン
+            current_time = datetime.now().strftime('%Y%m%d')
+            st.download_button(
+                label="コーチングレポートをダウンロード",
+                data=results["final_summary"],
+                file_name=f"coaching_report_{basic_info['name']}_{current_time}.txt",
+                mime="text/plain"
+            )
+
+        # リセットボタン
+        st.write("---")
+        if st.button("最初からやり直す"):
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            cleanup()
+            st.experimental_rerun()
+
+# アプリ終了時のクリーンアップ
 import atexit
-atexit.register(on_session_end)
+@atexit.register
+def on_session_end():
+    cleanup()
 
 if __name__ == "__main__":
     main()
