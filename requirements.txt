@@ -32,6 +32,9 @@ mediapipe>=0.10.9
 matplotlib>=3.8.0
 scikit-image>=0.22.0
 
+# Video Processing
+ffmpeg-python>=0.2.0
+
 # Geometry & 3D Processing
 pyquaternion>=0.9.9
 transforms3d>=0.4.1
