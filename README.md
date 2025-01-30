@@ -1,4 +1,4 @@
-# LLM Baseball Swing Coach - AIバッティングコーチングシステム
+# LLM Baseball Swing Coach
 
 ![](fig/fig.jpg)
 
