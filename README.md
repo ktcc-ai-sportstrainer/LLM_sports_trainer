@@ -36,9 +36,16 @@ pip install -r requirements.txt
 MotionAGFormer[参照](https://github.com/TaatiTeam/MotionAGFormer)
 
 4. 環境変数の設定：
+.envファイルに以下を
 ```bash
-cp .env.example .env
-# .envファイルを編集し、OPENAI_API_KEYを設定
+touch .env
+# .envファイルを編集し、OPENAI_API_KEYなどのキーを設定
+```
+以下がファイル内の例
+```bash
+OPENAI_API_KEY=sk-****
+GOOGLE_API_KEY=AIz****
+SEARCH_ENGINE_ID=86****
 ```
 
 ## 使用方法
