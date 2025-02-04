@@ -28,7 +28,7 @@ pip install -r requirements.txt
 - [YOLOv3とHRNetの事前学習モデル](https://drive.google.com/drive/folders/1_ENAMOsPM7FXmdYRbkwbFHgzQq_B_NQA?usp=sharing)をダウンロードし、`./run/lib/checkpoint/`に配置
 - [MotionAGFormerのベースモデル](https://drive.google.com/file/d/1Iii5EwsFFm9_9lKBUPfN8bV5LmfkNUMP/view)をダウンロードし、`./checkpoint/`に配置
 
-[参照](https://github.com/TaatiTeam/MotionAGFormer)
+MotionAGFormer[参照](https://github.com/TaatiTeam/MotionAGFormer)
 
 4. 環境変数の設定：
 ```bash
