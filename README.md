@@ -45,7 +45,7 @@ touch .env
 ```bash
 OPENAI_API_KEY=sk-****
 GOOGLE_API_KEY=AIz****
-SEARCH_ENGINE_ID=86****
+GOOGLE_CSE_ID=86****
 ```
 
 ## 使用方法
