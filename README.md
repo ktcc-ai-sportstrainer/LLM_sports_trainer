@@ -43,9 +43,9 @@ touch .env
 ```
 以下がファイル内の例
 ```bash
-OPENAI_API_KEY=sk-****
-GOOGLE_API_KEY=AIz****
-GOOGLE_CSE_ID=86****
+OPENAI_API_KEY=****
+GOOGLE_API_KEY=****
+GOOGLE_CSE_ID=****
 ```
 
 ## 使用方法
