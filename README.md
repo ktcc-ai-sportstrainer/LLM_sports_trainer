@@ -25,13 +25,27 @@ pip install -r requirements.txt
 ```
 
 3. 事前学習モデルのダウンロード：
-- [YOLOv3とHRNetの事前学習モデル](https://drive.google.com/drive/folders/1_ENAMOsPM7FXmdYRbkwbFHgzQq_B_NQA?usp=sharing)をダウンロードし、`./run/lib/checkpoint/`に配置
-- [MotionAGFormerのベースモデル](https://drive.google.com/file/d/1Iii5EwsFFm9_9lKBUPfN8bV5LmfkNUMP/view)をダウンロードし、`./checkpoint/`に配置
+- ディレクトリの作成
+   ```bash
+   mkdir MotionAGFormer/checkpoint
+   mkfir MotionAGFormer/run/lib/checkpoint
+   ```
+- [YOLOv3とHRNetの事前学習モデル](https://drive.google.com/drive/folders/1_ENAMOsPM7FXmdYRbkwbFHgzQq_B_NQA?usp=sharing)をダウンロードし、`MotionAGFormer/run/lib/checkpoint/`に配置
+- [MotionAGFormerのベースモデル](https://drive.google.com/file/d/1Iii5EwsFFm9_9lKBUPfN8bV5LmfkNUMP/view)をダウンロードし、`MotionAGFormer/checkpoint/`に配置
+
+MotionAGFormer[参照](https://github.com/TaatiTeam/MotionAGFormer)
 
 4. 環境変数の設定：
+.envファイルに以下を
 ```bash
-cp .env.example .env
-# .envファイルを編集し、OPENAI_API_KEYを設定
+touch .env
+# .envファイルを編集し、OPENAI_API_KEYなどのキーを設定
+```
+以下がファイル内の例
+```bash
+OPENAI_API_KEY=****
+GOOGLE_API_KEY=****
+GOOGLE_CSE_ID=****
 ```
 
 ## 使用方法
