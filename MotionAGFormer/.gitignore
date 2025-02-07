@@ -1,7 +1,0 @@
-.idea
-*.tar.xz
-*.pyc
-wandb
-checkpoint/*.pth.tr
-run/output/
-vis_for_bvh.py
