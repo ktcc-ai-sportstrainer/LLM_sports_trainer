@@ -1,0 +1,67 @@
+# このワークフローはZennブランチへのpush時にGCPサーバーへ自動デプロイします
+# 機密情報はGitHub Secretsで管理してください
+# 必要なSecrets例: SSH_HOST, SSH_USER, SSH_KEY, ENV_FILE
+
+name: Deploy to GCP Server
+
+on:
+  push:
+    branches:
+      - Zenn
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v3
+
+      - name: サーバーにSSH接続しデプロイ
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd ~/LLM_sports_trainer
+            git pull origin Zenn
+            # venv作成・有効化
+            if [ ! -d ".venv" ]; then
+              python3 -m venv .venv
+            fi
+            source .venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+            # 既存のstreamlitプロセスをkill
+            pkill -f "streamlit run app.py" || true
+            # .envファイルを一時退避
+            mv .env .env.bak 2>/dev/null || true
+
+      - name: .envファイルをサーバーに転送
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          source: "./.env"
+          target: "~/LLM_sports_trainer/.env"
+          overwrite: true
+          strip_components: 0
+          content: ${{ secrets.ENV_FILE }}
+
+      - name: サーバーでstreamlitをバックグラウンド起動
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd ~/LLM_sports_trainer
+            source .venv/bin/activate
+            nohup streamlit run app.py --server.port 8501 > streamlit.log 2>&1 &
+            echo "Streamlit started on port 8501" 
