@@ -1,10 +1,82 @@
-langchain ==                0.3.7                  
-langchain-community ==      0.3.2                 
-langchain-core ==           0.3.17                  
-langchain-openai ==         0.2.8
-langgraph  ==               0.2.48 
-openai   ==                 1.54.1  
-pydantic ==                 2.9.2 
-typing_extensions ==        4.12.2
-tiktoken ==                 0.8.0 
-python-dotenv
+# Core Dependencies
+streamlit>=1.32.0
+langchain>=0.1.0
+langchain-community>=0.0.16
+langchain-core>=0.1.17
+langchain-openai>=0.0.5
+langgraph>=0.0.10
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# OpenAI and Other APIs
+openai>=1.12.0
+google-api-python-client>=2.0.0
+google-search-results>=2.4.2
+tavily-python>=0.3.1
+
+# Deep Learning & Neural Networks
+torch>=2.2.0
+torchvision>=0.17.0
+timm>=0.9.12
+numba>=0.58.0
+
+# Data Processing & Analysis
+numpy>=1.24.0
+pandas>=2.0.0
+scipy>=1.12.0
+filterpy>=1.4.5
+
+# Computer Vision
+opencv-python>=4.9.0
+mediapipe>=0.10.9
+matplotlib>=3.8.0
+scikit-image>=0.22.0
+
+# Video Processing
+ffmpeg-python>=0.2.0
+
+# Geometry & 3D Processing
+pyquaternion>=0.9.9
+transforms3d>=0.4.1
+
+# Data Validation & Models
+pydantic>=2.0.0
+attrs>=23.2.0
+
+# Progress & Display
+tqdm>=4.66.0
+rich>=13.7.0
+
+# Configuration
+yacs>=0.1.8
+hydra-core>=1.3.2
+
+# File Handling & I/O
+pillow>=10.0.0
+h5py>=3.10.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.4.9
+
+# HTTP & Networking
+requests>=2.31.0
+aiohttp>=3.9.0
+websockets>=12.0
+
+# Development Tools
+black>=24.2.0
+isort>=5.13.0
+mypy>=1.8.0
+pytest>=8.0.0
+pytest-asyncio>=0.21.0
+
+# Documentation
+sphinx>=7.2.0
+sphinx-rtd-theme>=2.0.0
+
+# System & Performance
+psutil>=5.9.0
+memory-profiler>=0.61.0
+
+# Type Hints
+types-requests>=2.31.0.20240218
+types-PyYAML>=6.0.12.12

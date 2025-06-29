@@ -1,19 +1,15 @@
-from .executor import Executor
-from .passive_goal_creator import PassiveGoalCreator
-from .planner import Planner
-from .prompt_optimizer import PromptOptimizer
-from .query_decomposer import QueryDecomposer
-from .reportor import Reportor
-from .response_optimizer import ResponseOptimizer
-from .role_assigner import RoleAssigner
+from agents.interactive_agent.agent import InteractiveAgent
+from agents.modeling_agent.agent import ModelingAgent
+from agents.goal_setting_agent.agent import GoalSettingAgent
+from agents.plan_agent.agent import PlanAgent
+from agents.search_agent.agent import SearchAgent
+from agents.summarize_agent.agent import SummarizeAgent
 
 __all__ = [
-    "PassiveGoalCreator",
-    "PromptOptimizer",
-    "ResponseOptimizer",
-    "QueryDecomposer",
-    "Planner",
-    "RoleAssigner",
-    "Executor",
-    "Reportor",
+    "InteractiveAgent",
+    "ModelingAgent",
+    "GoalSettingAgent",
+    "PlanAgent",
+    "SearchAgent",
+    "SummarizeAgent",
 ]
