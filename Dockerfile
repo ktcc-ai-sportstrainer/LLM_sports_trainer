@@ -58,7 +58,6 @@ RUN pip install --no-cache-dir \
     black[jupyter] \
     pre-commit
 
-# プロジェクトファイルのコピー
 COPY . .
 
 COPY download_weights.py ./
