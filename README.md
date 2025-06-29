@@ -1,6 +1,6 @@
 # LLM Baseball Swing Coach
 
-[![GitHub Actions Workflow Status](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/actions/workflows/deploy.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/actions/workflows/deploy.yml)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/release/python-3110/)
 
