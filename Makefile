@@ -4,13 +4,13 @@
 # 主な仕様: ビルド、起動、停止、クリーンアップなどの操作を提供
 # 制限事項: Makeがインストールされている必要がある
 
-.PHONY: help build up down clean logs shell jupyter debug streamlit test format lint
+.PHONY: help build up down clean logs shell jupyter debug streamlit test format lint prod-build prod-up prod-down prod-logs
 
 # デフォルトターゲット
 help:
 	@echo "🚀 LLM Sports Trainer Docker開発環境"
 	@echo ""
-	@echo "利用可能なコマンド:"
+	@echo "開発環境コマンド:"
 	@echo "  make build      - Dockerイメージをビルド"
 	@echo "  make up         - 開発環境を起動"
 	@echo "  make down       - 開発環境を停止"
@@ -23,6 +23,13 @@ help:
 	@echo "  make test       - テストを実行"
 	@echo "  make format     - コードフォーマット"
 	@echo "  make lint       - コードリント"
+	@echo ""
+	@echo "本番環境コマンド:"
+	@echo "  make prod-build - 本番用Dockerイメージをビルド"
+	@echo "  make prod-up    - 本番環境を起動"
+	@echo "  make prod-down  - 本番環境を停止"
+	@echo "  make prod-logs  - 本番環境のログを表示"
+	@echo ""
 	@echo "  make help       - このヘルプを表示"
 
 # Dockerイメージのビルド
@@ -106,6 +113,40 @@ lint:
 	docker-compose -f docker-compose.dev.yml run --rm dev-app mypy .
 	@echo "✅ リント完了"
 
+# 本番環境用コマンド
+
+# 本番用Dockerイメージのビルド
+prod-build:
+	@echo "🔨 本番用Dockerイメージをビルド中..."
+	docker-compose -f docker-compose.prod.yml build --no-cache
+	@echo "✅ 本番用ビルド完了"
+
+# 本番環境の起動
+prod-up:
+	@echo "🚀 本番環境を起動中..."
+	docker-compose -f docker-compose.prod.yml up -d
+	@echo "✅ 本番環境が起動しました"
+	@echo "🌐 アクセス先: http://localhost:8501"
+
+# 本番環境の停止
+prod-down:
+	@echo "🛑 本番環境を停止中..."
+	docker-compose -f docker-compose.prod.yml down
+	@echo "✅ 本番環境が停止しました"
+
+# 本番環境のログ表示
+prod-logs:
+	@echo "📋 本番環境のログを表示中..."
+	docker-compose -f docker-compose.prod.yml logs -f
+
+# 本番環境の状態確認
+prod-status:
+	@echo "📊 本番環境の状態:"
+	docker-compose -f docker-compose.prod.yml ps
+	@echo ""
+	@echo "🌐 アクセス可能なサービス:"
+	@echo "  - Streamlit: http://localhost:8501"
+
 # 環境変数ファイルの作成
 env:
 	@echo "📝 .envファイルを作成中..."
@@ -113,6 +154,7 @@ env:
 		echo "# LLM Sports Trainer 環境変数" > .env; \
 		echo "OPENAI_API_KEY=your_openai_api_key_here" >> .env; \
 		echo "GOOGLE_API_KEY=your_google_api_key_here" >> .env; \
+		echo "GOOGLE_CSE_ID=your_google_cse_id_here" >> .env; \
 		echo "TAVILY_API_KEY=your_tavily_api_key_here" >> .env; \
 		echo "✅ .envファイルを作成しました"; \
 		echo "⚠️  実際のAPIキーを設定してください"; \

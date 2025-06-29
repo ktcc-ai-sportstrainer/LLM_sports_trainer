@@ -1,67 +1,84 @@
-# このワークフローはZennブランチへのpush時にGCPサーバーへ自動デプロイします
+# このワークフローはZennブランチへのpush時にCloud Runへ自動デプロイします
 # 機密情報はGitHub Secretsで管理してください
-# 必要なSecrets例: SSH_HOST, SSH_USER, SSH_KEY, ENV_FILE
+# 必要なSecrets例: GCP_PROJECT_ID, GCP_SERVICE_ACCOUNT_KEY
 
-name: Deploy to GCP Server
+name: Deploy to Cloud Run
 
 on:
   push:
     branches:
       - Zenn
 
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: llm-sports-trainer
+  REGION: asia-northeast1
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - name: リポジトリをチェックアウト
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: サーバーにSSH接続しデプロイ
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Google Cloud認証
+        uses: google-github-actions/auth@v2
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: 22
-          script: |
-            set -e
-            cd ~/LLM_sports_trainer
-            git pull origin Zenn
-            # venv作成・有効化
-            if [ ! -d ".venv" ]; then
-              python3 -m venv .venv
-            fi
-            source .venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements.txt
-            # 既存のstreamlitプロセスをkill
-            pkill -f "streamlit run app.py" || true
-            # .envファイルを一時退避
-            mv .env .env.bak 2>/dev/null || true
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - name: .envファイルをサーバーに転送
-        uses: appleboy/scp-action@v0.1.7
+      - name: Google Cloud CLI設定
+        uses: google-github-actions/setup-gcloud@v2
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: 22
-          source: "./.env"
-          target: "~/LLM_sports_trainer/.env"
-          overwrite: true
-          strip_components: 0
-          content: ${{ secrets.ENV_FILE }}
+          project_id: ${{ env.PROJECT_ID }}
 
-      - name: サーバーでstreamlitをバックグラウンド起動
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: 22
-          script: |
-            set -e
-            cd ~/LLM_sports_trainer
-            source .venv/bin/activate
-            nohup streamlit run app.py --server.port 8501 > streamlit.log 2>&1 &
-            echo "Streamlit started on port 8501" 
+      - name: Dockerイメージをビルド
+        run: |
+          echo "🔨 Cloud Run用Dockerイメージをビルド中..."
+          docker build -f Dockerfile.cloudrun -t gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} .
+          echo "✅ Dockerイメージビルド完了"
+
+      - name: DockerイメージをContainer Registryにプッシュ
+        run: |
+          echo "📤 Dockerイメージをプッシュ中..."
+          docker push gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}
+          echo "✅ Dockerイメージプッシュ完了"
+
+      - name: Cloud Runにデプロイ
+        run: |
+          echo "🚀 Cloud Runにデプロイ中..."
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image gcr.io/${{ env.PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }} \
+            --platform managed \
+            --region ${{ env.REGION }} \
+            --allow-unauthenticated \
+            --port 8501 \
+            --memory 2Gi \
+            --cpu 1 \
+            --max-instances 10 \
+            --min-instances 0 \
+            --timeout 300 \
+            --concurrency 80 \
+            --set-env-vars "PYTHONPATH=/app" \
+            --set-env-vars "PYTHONUNBUFFERED=1" \
+            --set-env-vars "STREAMLIT_SERVER_PORT=8501" \
+            --set-env-vars "STREAMLIT_SERVER_ADDRESS=0.0.0.0" \
+            --set-env-vars "STREAMLIT_SERVER_HEADLESS=true" \
+            --set-env-vars "STREAMLIT_SERVER_ENABLE_CORS=false" \
+            --set-env-vars "STREAMLIT_SERVER_ENABLE_XSRF_PROTECTION=false" \
+            --set-env-vars "STREAMLIT_BROWSER_GATHER_USAGE_STATS=false" \
+            --set-env-vars "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
+            --set-env-vars "GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}" \
+            --set-env-vars "GOOGLE_CSE_ID=${{ secrets.GOOGLE_CSE_ID }}" \
+            --set-env-vars "TAVILY_API_KEY=${{ secrets.TAVILY_API_KEY }}"
+          echo "✅ Cloud Runデプロイ完了"
+
+      - name: デプロイURLを取得
+        id: get-url
+        run: |
+          echo "url=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region=${{ env.REGION }} --format='value(status.url)')" >> $GITHUB_OUTPUT
+
+      - name: デプロイ完了通知
+        run: |
+          echo "🎉 デプロイが正常に完了しました！"
+          echo "🌐 アクセス先: ${{ steps.get-url.outputs.url }}"
+          echo "📊 Cloud Runコンソール: https://console.cloud.google.com/run/detail/${{ env.REGION }}/${{ env.SERVICE_NAME }}" 

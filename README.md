@@ -151,9 +151,10 @@ llm-baseball-swing-coach/
 ├── utils/           # ユーティリティ関数
 ├── config/          # 設定ファイル
 ├── MotionAGFormer/  # 3D姿勢推定モデル
-├── Dockerfile       # Docker開発環境
-├── docker-compose.yml # Docker Compose設定
-├── docker-compose.dev.yml # 開発環境設定
+├── Dockerfile       # 開発環境用Dockerfile
+├── Dockerfile.cloudrun # Cloud Run用Dockerfile
+├── docker-compose.yml # 開発環境設定
+├── docker-compose.dev.yml # 開発環境詳細設定
 ├── Makefile         # 開発環境操作
 └── docker-entrypoint.sh # コンテナ起動スクリプト
 ```
@@ -309,6 +310,41 @@ docker container prune
 ```bash
 # イメージの脆弱性スキャン
 docker scan llm_sports_trainer_dev
+```
+
+## 本番環境デプロイ（Cloud Run）
+
+### 自動デプロイ
+Zennブランチへのプッシュ時に自動的にGoogle Cloud Runにデプロイされます。
+
+### 必要なGitHub Secrets
+```bash
+GCP_PROJECT_ID=your_gcp_project_id
+GCP_SERVICE_ACCOUNT_KEY=your_service_account_key_json
+OPENAI_API_KEY=your_openai_api_key
+GOOGLE_API_KEY=your_google_api_key
+GOOGLE_CSE_ID=your_google_cse_id
+TAVILY_API_KEY=your_tavily_api_key
+```
+
+### Cloud Run設定
+- **リージョン**: asia-northeast1
+- **メモリ**: 2Gi
+- **CPU**: 1
+- **最大インスタンス**: 10
+- **最小インスタンス**: 0
+- **タイムアウト**: 300秒
+- **同時接続数**: 80
+
+### 手動デプロイ
+```bash
+# Google Cloud CLIで手動デプロイ
+gcloud run deploy llm-sports-trainer \
+  --image gcr.io/YOUR_PROJECT_ID/llm-sports-trainer:latest \
+  --platform managed \
+  --region asia-northeast1 \
+  --allow-unauthenticated \
+  --port 8501
 ```
 
 ## 参考文献

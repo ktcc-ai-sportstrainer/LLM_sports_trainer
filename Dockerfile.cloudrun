@@ -1,0 +1,61 @@
+# LLM Sports Trainer Cloud Run用Dockerfile
+# 
+# 概要: Cloud Runでの本番環境実行用Dockerイメージ
+# 主な仕様: 軽量化、セキュリティ強化、Cloud Run最適化
+# 制限事項: 開発ツールは含まれない
+
+# ベースイメージ: Python 3.11 slim
+FROM python:3.11-slim
+
+# メタデータ
+LABEL maintainer="LLM Sports Trainer Team"
+LABEL description="LLM Sports Trainer Cloud Run Production Environment"
+LABEL version="1.0.0"
+
+# 環境変数設定
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PORT=8501
+
+# 作業ディレクトリ設定
+WORKDIR /app
+
+# システムパッケージの更新とインストール（最小限）
+RUN apt-get update && apt-get install -y \
+    # 基本的な依存関係
+    build-essential \
+    curl \
+    # 画像・動画処理関連（必要最小限）
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libglib2.0-0 \
+    libgl1-mesa-glx \
+    # その他の依存関係
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
+
+# Python依存関係のインストール
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# プロジェクトファイルのコピー
+COPY . .
+
+# 権限設定
+RUN chmod +x docker-entrypoint.sh
+
+# ポート設定（Cloud Run用）
+EXPOSE 8501
+
+# ヘルスチェック
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+
+# エントリーポイント
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"] 
