@@ -1,0 +1,129 @@
+# LLM Sports Trainer 開発環境用docker-compose.yml
+#
+# 概要: 開発環境の複数サービスを管理するDocker Compose設定
+# 主な仕様: メインアプリ、Jupyter、デバッグ環境を含む
+# 制限事項: GPU使用時はnvidia-docker-composeが必要
+
+version: '3.8'
+
+services:
+  # メインアプリケーションサービス
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_sports_trainer_app
+    ports:
+      - "8501:8501"  # Streamlit
+      - "8888:8888"  # Jupyter
+      - "5678:5678"  # デバッグポート
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    env_file:
+      - .env
+    working_dir: /app
+    command: ["python", "main.py", "--help"]
+    restart: unless-stopped
+    networks:
+      - llm_sports_network
+
+  # Jupyter開発環境
+  jupyter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_sports_trainer_jupyter
+    ports:
+      - "8889:8888"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    env_file:
+      - .env
+    working_dir: /app
+    command: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''"]
+    restart: unless-stopped
+    networks:
+      - llm_sports_network
+
+  # デバッグ環境
+  debug:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_sports_trainer_debug
+    ports:
+      - "5679:5678"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    env_file:
+      - .env
+    working_dir: /app
+    command: ["python", "-m", "debugpy", "--listen", "0.0.0.0:5678", "--wait-for-client", "main.py", "--help"]
+    restart: unless-stopped
+    networks:
+      - llm_sports_network
+
+  # Streamlit開発サーバー
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: llm_sports_trainer_streamlit
+    ports:
+      - "8502:8501"
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    env_file:
+      - .env
+    working_dir: /app
+    command: ["streamlit", "run", "main.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    restart: unless-stopped
+    networks:
+      - llm_sports_network
+
+# ネットワーク設定
+networks:
+  llm_sports_network:
+    driver: bridge
+
+# ボリューム設定
+volumes:
+  data:
+  logs:
+  models: 
