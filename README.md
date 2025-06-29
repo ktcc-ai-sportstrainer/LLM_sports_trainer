@@ -347,7 +347,7 @@ gcloud run deploy llm-sports-trainer \
   --platform managed \
   --region asia-northeast1 \
   --allow-unauthenticated \
-  --port 8501
+  --port 8080  # Cloud Run が指定する PORT を使用
 ```
 
 ## 参考文献

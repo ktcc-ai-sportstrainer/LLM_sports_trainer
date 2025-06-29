@@ -16,7 +16,8 @@ LABEL version="1.0.0"
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
-ENV PORT=8501
+# Cloud Runが提供するPORT環境変数(デフォルト8080)を利用する
+ENV PORT=8080
 
 # 作業ディレクトリ設定
 WORKDIR /app
@@ -50,12 +51,12 @@ COPY . .
 RUN chmod +x docker-entrypoint.sh
 
 # ポート設定（Cloud Run用）
-EXPOSE 8501
+EXPOSE 8080
 
 # ヘルスチェック
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+    CMD curl -f http://localhost:${PORT}/_stcore/health || exit 1
 
 # エントリーポイント
 ENTRYPOINT ["./docker-entrypoint.sh"]
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"] 
+CMD ["sh", "-c", "streamlit run app.py --server.port=${PORT} --server.address=0.0.0.0"]
