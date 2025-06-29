@@ -37,7 +37,7 @@ jobs:
 
       - name: Configure Docker to use gcloud as a credential helper
         run: |
-          echo "Configuring Docker with gcloud credential helper..."
+          echo "Configuring Docker with gcloud credential helper...!!"
           gcloud auth configure-docker --quiet
 
       - name: Build and push Docker image
