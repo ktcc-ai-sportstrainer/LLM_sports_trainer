@@ -61,8 +61,8 @@ RUN pip install --no-cache-dir \
 # プロジェクトファイルのコピー
 COPY . .
 
-# 権限設定
-RUN chmod +x docker-entrypoint.sh
+COPY download_weights.py ./
+RUN python download_weights.py
 
 # ポート設定
 EXPOSE 8080
