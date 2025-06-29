@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 import json
 import os
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 import streamlit as st
 
@@ -13,7 +13,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 class InteractiveAgent(BaseAgent):
-    def __init__(self, llm: ChatOpenAI, mode: str = "mock"):
+    def __init__(self, llm: ChatGoogleGenerativeAI, mode: str = "mock"):
         super().__init__(llm)
         self.current_turn = 0
         self.max_turns = 3

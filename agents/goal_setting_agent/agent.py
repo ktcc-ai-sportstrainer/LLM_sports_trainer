@@ -1,6 +1,6 @@
 import json
 from typing import Any, Dict, List
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.base import BaseAgent
 
 class GoalSettingAgent(BaseAgent):
@@ -8,7 +8,7 @@ class GoalSettingAgent(BaseAgent):
     選手の情報と対話内容から、バッティング改善の大枠の目標を設定するエージェント。
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: ChatGoogleGenerativeAI):
         super().__init__(llm)
         self.prompts = self._load_prompts()
 

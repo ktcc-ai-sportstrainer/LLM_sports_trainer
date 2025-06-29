@@ -4,7 +4,7 @@ import json
 import asyncio
 from datetime import datetime
 
-# 環境変数の読み込み（.envなどにOPENAI_API_KEYを設定）
+# 環境変数の読み込み（.envなどにGOOGLE_API_KEYを設定）
 from dotenv import load_dotenv
 load_dotenv(override=True)
 

@@ -1,6 +1,6 @@
 import json
 from typing import Any, Dict, List
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.base import BaseAgent
 from agents.search_agent.agent import SearchAgent
 
@@ -10,7 +10,7 @@ class PlanAgent(BaseAgent):
     必要に応じてSearchAgentで情報を収集し、再度プランに反映する。
     """
 
-    def __init__(self, llm: ChatOpenAI, search_agent: SearchAgent):
+    def __init__(self, llm: ChatGoogleGenerativeAI, search_agent: SearchAgent):
         super().__init__(llm)
         self.search_agent = search_agent
         self.prompts = self._load_prompts()

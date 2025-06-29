@@ -84,7 +84,7 @@ touch .env
 
 #### 環境変数設定例
 ```bash
-OPENAI_API_KEY=your_openai_api_key_here
+
 GOOGLE_API_KEY=your_google_api_key_here
 GOOGLE_CSE_ID=your_google_cse_id_here
 TAVILY_API_KEY=your_tavily_api_key_here
@@ -321,10 +321,9 @@ Zennブランチへのプッシュ時に自動的にGoogle Cloud Runにデプロ
 ```bash
 GCP_PROJECT_ID=your_gcp_project_id
 GCP_SERVICE_ACCOUNT_KEY=your_service_account_key_json
-OPENAI_API_KEY=your_openai_api_key
-GOOGLE_API_KEY=your_google_api_key
-GOOGLE_CSE_ID=your_google_cse_id
-TAVILY_API_KEY=your_tavily_api_key
+      - GOOGLE_API_KEY=your_google_api_key
+      - GOOGLE_CSE_ID=your_google_cse_id
+      - TAVILY_API_KEY=your_tavily_api_key
 ```
 
 ### Cloud Run設定

@@ -2,7 +2,7 @@
 from typing import Dict, Any, List
 import json
 import os
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.base import BaseAgent
@@ -13,7 +13,7 @@ class SummarizeAgent(BaseAgent):
     システム全体の出力を最終的なコーチングレポートにまとめる
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: ChatGoogleGenerativeAI):
         super().__init__(llm)
         prompt_path = os.path.join(os.path.dirname(__file__), "prompts.json")
         with open(prompt_path, "r", encoding="utf-8") as f:

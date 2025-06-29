@@ -21,7 +21,7 @@ mkdir -p config
 
 # 環境変数のチェック
 echo "🔍 環境変数をチェック中..."
-required_vars=("OPENAI_API_KEY")
+required_vars=("GOOGLE_API_KEY")
 missing_vars=()
 
 for var in "${required_vars[@]}"; do
