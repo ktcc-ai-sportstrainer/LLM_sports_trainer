@@ -1,5 +1,9 @@
 # LLM Baseball Swing Coach
 
+[![GitHub Actions Workflow Status](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/actions/workflows/deploy.yml/badge.svg)](https://github.com/YOUR_USERNAME/YOUR_REPOSITORY/actions/workflows/deploy.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/release/python-3110/)
+
 ![](fig/fig.jpg)
 
 本プロジェクトは、AKATSUKIプロジェクト採択「関西テッククリエイターチャレンジ」にて開発された，AIを活用して野球選手のバッティングフォームを分析し，個別化されたコーチングを提供するシステムです．3D姿勢推定技術とLLMを組み合わせることで，選手のスイングを詳細に分析し，具体的な改善アドバイスを提供します．
