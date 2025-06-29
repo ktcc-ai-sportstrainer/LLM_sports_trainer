@@ -17,6 +17,8 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # 一時的に無効化（GitHub Secrets設定後に有効化）
+    if: true
     steps:
       - name: リポジトリをチェックアウト
         uses: actions/checkout@v4
@@ -81,4 +83,24 @@ jobs:
         run: |
           echo "🎉 デプロイが正常に完了しました！"
           echo "🌐 アクセス先: ${{ steps.get-url.outputs.url }}"
-          echo "📊 Cloud Runコンソール: https://console.cloud.google.com/run/detail/${{ env.REGION }}/${{ env.SERVICE_NAME }}" 
+          echo "📊 Cloud Runコンソール: https://console.cloud.google.com/run/detail/${{ env.REGION }}/${{ env.SERVICE_NAME }}"
+
+  # 設定確認用ジョブ
+  check-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: GitHub Secrets設定確認
+        run: |
+          echo "⚠️  Cloud Runデプロイが無効化されています"
+          echo "📋 必要なGitHub Secrets:"
+          echo "  - GCP_PROJECT_ID"
+          echo "  - GCP_SERVICE_ACCOUNT_KEY"
+          echo "  - OPENAI_API_KEY"
+          echo "  - GOOGLE_API_KEY"
+          echo "  - GOOGLE_CSE_ID"
+          echo "  - TAVILY_API_KEY"
+          echo ""
+          echo "🔧 設定方法:"
+          echo "  1. GitHubリポジトリ → Settings → Secrets and variables → Actions"
+          echo "  2. New repository secret で上記Secretsを追加"
+          echo "  3. このファイルの 'if: false' を 'if: true' に変更" 
