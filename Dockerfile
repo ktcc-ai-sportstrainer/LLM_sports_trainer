@@ -65,7 +65,7 @@ COPY . .
 RUN chmod +x docker-entrypoint.sh
 
 # ポート設定
-EXPOSE 8501 8888 5678
+EXPOSE 8080
 
-# エントリーポイント
-ENTRYPOINT ["./docker-entrypoint.sh"] 
+# Streamlit の起動コマンド（Cloud RunのPORTに対応）
+CMD ["streamlit", "run", "app.py", "--server.port=8080", "--server.address=0.0.0.0"]
