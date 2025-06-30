@@ -1,3 +1,5 @@
+import torch
+
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
@@ -64,13 +66,13 @@ def reset_config(args):
     torch.backends.cudnn.enabled = cfg.CUDNN.ENABLED
 
 
-# load model
 def model_load(config):
     model = pose_hrnet.get_pose_net(config, is_train=False)
     if torch.cuda.is_available():
         model = model.cuda()
 
-    state_dict = torch.load(config.OUTPUT_DIR)
+    # モデルをCPUにマッピングして読み込むように変更
+    state_dict = torch.load(config.OUTPUT_DIR, map_location=torch.device('cpu'))
     from collections import OrderedDict
     new_state_dict = OrderedDict()
     for k, v in state_dict.items():
