@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y \
     # その他の依存関係
     libgomp1 \
     libgcc-s1 \
+    python3 \
+    python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Python依存関係のインストール
@@ -61,7 +63,7 @@ RUN pip install --no-cache-dir \
 COPY . .
 
 COPY download_weights.py ./
-RUN python download_weights.py
+RUN python3 download_weights.py
 
 # ポート設定
 EXPOSE 8080
