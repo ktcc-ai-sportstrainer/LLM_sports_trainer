@@ -2,7 +2,7 @@ from typing import Dict, Any, Optional, Tuple
 import os
 import asyncio
 import json
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 from core.base.logger import SystemLogger
 from core.webui.state import WebUIState
@@ -24,14 +24,15 @@ class WebUISwingCoachingSystem:
         self.interactive_enabled = True
 
         # LLMの初期化
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if not openai_api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set")
+        google_api_key = os.getenv("GOOGLE_API_KEY")
+        if not google_api_key:
+            raise ValueError("GOOGLE_API_KEY environment variable is not set")
 
-        self.llm = ChatOpenAI(
-            openai_api_key=openai_api_key,
-            model=config.get("model_name", "gpt-4"),
-            temperature=0.7
+        self.llm = ChatGoogleGenerativeAI(
+            google_api_key=google_api_key,
+            model=config.get("gemini_model_name", "gemini-2.5-flash"),
+            temperature=0.7,
+            convert_system_message_to_human=True
         )
 
         # エージェントの初期化

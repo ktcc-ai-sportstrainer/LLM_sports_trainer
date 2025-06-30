@@ -2,7 +2,7 @@ from typing import Any, Dict, List
 import json
 import os
 from langchain_community.agent_toolkits.load_tools import load_tools
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from agents.base import BaseAgent
 
 class SearchAgent(BaseAgent):
@@ -10,7 +10,7 @@ class SearchAgent(BaseAgent):
     各種キーワードでGoogle検索を行い、その結果をPlanAgent等に提供するエージェント。
     """
 
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: ChatGoogleGenerativeAI):
         super().__init__(llm)
         # prepare search tools
         self.search_tools = load_tools(["google-search"])

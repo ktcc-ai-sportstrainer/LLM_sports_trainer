@@ -7,12 +7,12 @@ import asyncio
 from config.load_config import load_config
 from core.cli.system import SwingCoachingSystem
 from utils.json_handler import JSONHandler
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 
-# .envを読み込む (OPENAI_API_KEYなど)
+# .envを読み込む (GOOGLE_API_KEYなど)
 load_dotenv(override=True)
 
-required_keys = ["OPENAI_API_KEY"]
+required_keys = ["GOOGLE_API_KEY"]
 for key in required_keys:
     if not os.getenv(key):
         raise ValueError(f"{key} environment variable is not set")
