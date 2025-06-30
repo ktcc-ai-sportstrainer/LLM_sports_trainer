@@ -71,7 +71,6 @@ class WebUISwingCoachingSystem:
                 "python",
                 "MotionAGFormer/run/vis.py",
                 "--video", video_path,
-                "--gpu", "0"
             ]
             
             process = await asyncio.create_subprocess_exec(
