@@ -4,7 +4,7 @@ import json
 import asyncio
 from datetime import datetime
 
-# 環境変数の読み込み（.envなどにOPENAI_API_KEYを設定）
+# 環境変数の読み込み（.envなどにGEMINI_API_KEYを設定）
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
@@ -86,8 +86,8 @@ def validate_inputs(basic_info, coaching_policy):
 
 # ==================== メインアプリ ====================
 def main():
-    st.set_page_config(page_title="野球スイングコーチングAI", page_icon="⚾", layout="wide")
-    st.title("LLM Baseball Swing Coach")
+    st.set_page_config(page_title="AI Kommon", page_icon="✒︎", layout="wide")
+    st.title("AI Kommon")
 
     # セッション変数を初期化
     init_session_state()
