@@ -173,8 +173,7 @@ def flip_data(data, left_joints=[1, 2, 3, 14, 15, 16], right_joints=[4, 5, 6, 11
 @torch.no_grad()
 def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
     """
-    メインの3D姿勢推定。最終的に all_3d_coords を JSON出力する。
-    さらに同じ構造を呼び出し元に返すか、標準出力に出しても良い。
+    メインの3D姿勢推定。CPU版に修正。
     """
     # parse known args for model config
     args, _ = argparse.ArgumentParser().parse_known_args()
@@ -189,13 +188,24 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
     args.n_frames = 243
     args = vars(args)
 
-    model = nn.DataParallel(MotionAGFormer(**args)).cuda()
+    # DataParallelを削除し、CPUで実行
+    model = MotionAGFormer(**args)
 
-    # load pretrained
+    # load pretrained (map_location='cpu'を追加)
     model_path = sorted(glob.glob(os.path.join('MotionAGFormer/checkpoint', 'motionagformer-b-h36m.pth.tr')))[0]
-    pre_dict = torch.load(model_path)
-    model.load_state_dict(pre_dict['model'], strict=True)
-
+    pre_dict = torch.load(model_path, map_location='cpu')
+    
+    # DataParallelでラップされていたモデルの重みをロードする場合の処理
+    state_dict = pre_dict['model']
+    # 'module.'プレフィックスを削除
+    new_state_dict = {}
+    for k, v in state_dict.items():
+        if k.startswith('module.'):
+            new_state_dict[k[7:]] = v  # 'module.'を削除
+        else:
+            new_state_dict[k] = v
+    
+    model.load_state_dict(new_state_dict, strict=True)
     model.eval()
 
     # 2D keypoints 
@@ -236,8 +246,9 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
         input_2D = normalize_screen_coordinates(clip, w=img_size[1], h=img_size[0]) 
         input_2D_aug = flip_data(input_2D)
         
-        input_2D = torch.from_numpy(input_2D.astype('float32')).cuda()
-        input_2D_aug = torch.from_numpy(input_2D_aug.astype('float32')).cuda()
+        # .cuda()を削除し、CPU用に変換
+        input_2D = torch.from_numpy(input_2D.astype('float32'))
+        input_2D_aug = torch.from_numpy(input_2D_aug.astype('float32'))
 
         output_3D_non_flip = model(input_2D) 
         output_3D_flip = flip_data(model(input_2D_aug))
@@ -249,7 +260,7 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
 
         # place hip(0) to origin
         output_3D[:, :, 0, :] = 0
-        post_out_all = output_3D[0].cpu().detach().numpy()  # shape: (n_frames, 17, 3)
+        post_out_all = output_3D[0].cpu().detach().numpy()  # CPU版でも.cpu()は残しておく（互換性のため）
 
         for j, post_out in enumerate(post_out_all):
             frame_index = idx_offset + j
@@ -340,11 +351,11 @@ def get_pose3D(video_path, output_dir, output_json_path="3d_result.json"):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--video', type=str, default='sample_video.mp4', help='Path to input video')
-    parser.add_argument('--gpu', type=str, default='0', help='gpu id')
+    # --gpuオプションは削除（CPU版では不要）
     parser.add_argument('--out_json', type=str, default='3d_result.json', help='Output JSON file name')
     args = parser.parse_args()
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
+    # CUDA環境変数の設定を削除
 
     video_path = args.video
     video_name = os.path.splitext(os.path.basename(video_path))[0]
