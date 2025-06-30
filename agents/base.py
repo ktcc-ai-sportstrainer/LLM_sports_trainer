@@ -2,13 +2,13 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple, TypeVar
 
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from models.output.agent_output import AgentOutput
 from core.base.logger import SystemLogger
 
 
 class BaseAgent(ABC):
-    def __init__(self, llm: ChatOpenAI):
+    def __init__(self, llm: ChatGoogleGenerativeAI):
         self.llm = llm
         self.agent_name = self.__class__.__name__
         self.logger = SystemLogger()

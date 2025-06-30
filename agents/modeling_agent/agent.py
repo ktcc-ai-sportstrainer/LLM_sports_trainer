@@ -3,7 +3,7 @@ import json
 import os
 import asyncio
 import subprocess
-from langchain_openai import ChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
 from agents.base import BaseAgent
@@ -11,7 +11,7 @@ from agents.modeling_agent.metrics.swing import SwingMetrics
 from MotionAGFormer.JsonAnalist import analyze_json
 
 class ModelingAgent(BaseAgent):
-    def __init__(self, llm: ChatOpenAI, user_height: float = 170.0):
+    def __init__(self, llm: ChatGoogleGenerativeAI, user_height: float = 170.0):
         super().__init__(llm)
         self.swing_metrics = SwingMetrics()
         self.prompts = self._load_prompts()

@@ -31,7 +31,7 @@ pip install -r requirements.txt
 4. 環境変数の設定：
 ```bash
 cp .env.example .env
-# .envファイルを編集し、OPENAI_API_KEY、GOOGLE_API_KEY、GOOGLE_CLI_IDを設定
+# .envファイルを編集し、GOOGLE_API_KEYを設定
 ```
 
 ## 使用方法
@@ -95,4 +95,4 @@ llm-baseball-swing-coach/
 ## 注意事項
 - このシステムはアシスタントとして機能することを目的としており、プロのコーチの判断を完全に代替するものではありません。
 - 動画分析には高性能なGPUを推奨します。
-- APIキーの利用には別途OpenAIのアカウントとクレジットが必要です。
+- Gemini APIを利用するにはGoogleのAPIキーが必要です。
