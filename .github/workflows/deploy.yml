@@ -3,7 +3,7 @@ name: Deploy Streamlit App to Cloud Run
 on:
   push:
     branches:
-      - ozaki-version
+      - ozaki_version
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   SERVICE_NAME: streamlitapp
