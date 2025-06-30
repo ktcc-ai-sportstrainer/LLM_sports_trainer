@@ -4,8 +4,8 @@
 # 主な仕様: Python 3.11, CUDA対応, 開発ツール含む
 # 制限事項: GPU使用時はnvidia-dockerが必要
 
-# ベースイメージ: Python 3.11 + CUDA 12.1
-FROM nvidia/cuda:12.1.1-cudnn8-devel-ubuntu20.04
+# ベースイメージ: Python 3.11
+FROM python:3.11-slim
 
 # メタデータ
 LABEL maintainer="LLM Sports Trainer Team"
