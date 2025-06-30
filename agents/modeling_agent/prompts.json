@@ -1,0 +1,7 @@
+{
+    "comparison_prompt": "以下のスイング分析データを比較し、主な違いと改善点を特定してください。\n\nユーザーの分析結果:\n{user_analysis}\n\n理想のスイング分析結果:\n{ideal_analysis}\n\n指標の説明:\n{metrics_description}\n\n出力はプレーンテキストで出力してください．",
+
+    "single_swing_analysis_prompt": "以下のスイング分析データを、一般的な野球の打撃フォームの基準と比較して分析してください。\n\nスイング分析結果:\n{swing_analysis}\n\n指標の説明:\n{metrics_description}\n\n出力はプレーンテキストで出力してください．",
+
+    "metrics_analysis_prompt": "以下の計測された指標について分析してください:\n\n{metrics}\n\n以下の点を考慮して分析してください:\n1. バットスピード：平均的な値との比較\n2. 回転の連動性：理想的な動きからのズレ\n3. 重心移動：効率的な体重移動ができているか\n4. スイング軌道：ミート力向上の観点から\n\n出力形式はプレーンテキストで出力してください．"
+}
