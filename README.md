@@ -1,4 +1,4 @@
-# LLM Baseball Swing Coach
+# LLM Sports Trainer
 
 ![](fig/fig.jpg)
 
